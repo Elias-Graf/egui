@@ -6,6 +6,7 @@
 #[cfg(feature = "chrono")]
 mod datepicker;
 
+pub mod dynamic_texture_manager;
 pub mod image;
 mod layout;
 mod sizing;
@@ -15,6 +16,7 @@ mod table;
 #[cfg(feature = "chrono")]
 pub use crate::datepicker::DatePickerButton;
 
+pub use crate::dynamic_texture_manager::DynamicTextureManager;
 pub use crate::image::RetainedImage;
 pub(crate) use crate::layout::StripLayout;
 pub use crate::sizing::Size;
