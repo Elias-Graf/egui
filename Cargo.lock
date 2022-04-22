@@ -1148,16 +1148,13 @@ version = "0.17.0"
 dependencies = [
  "chrono",
  "egui",
+ "ehttp",
  "image",
- "js-sys",
  "resvg",
  "serde",
  "tiny-skia",
  "tracing",
  "usvg",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
