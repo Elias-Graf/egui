@@ -1,17 +1,13 @@
-//! eframe - the egui framework crate
+//! eframe - the [`egui`] framework crate
 //!
 //! If you are planning to write an app for web or native,
-//! and are happy with just using egui for all visuals,
-//! Then `eframe` is for you!
+//! and want to use [`egui`] for everything, then `eframe` is for you!
 //!
 //! To get started, see the [examples](https://github.com/emilk/egui/tree/master/examples).
 //! To learn how to set up `eframe` for web and native, go to <https://github.com/emilk/eframe_template/> and follow the instructions there!
 //!
-//! In short, you implement [`App`] and then
+//! In short, you implement [`App`] (especially [`App::update`]) and then
 //! call [`crate::run_native`] from your `main.rs`, and/or call `eframe::start_web` from your `lib.rs`.
-//!
-//! `eframe` is implemented using [`egui_web`](https://github.com/emilk/egui/tree/master/egui_web) for web and
-//! [`egui_glow`](https://github.com/emilk/egui/tree/master/egui_glow) for native.
 //!
 //! ## Usage, native:
 //! ``` no_run
@@ -56,11 +52,23 @@
 //!     eframe::start_web(canvas_id, Box::new(|cc| Box::new(MyApp::new(cc))))
 //! }
 //! ```
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::needless_doctest_main)]
 
 // Re-export all useful libraries:
-pub use {egui, egui::emath, egui::epaint, epi};
+pub use {egui, egui::emath, egui::epaint};
+
+#[cfg(feature = "glow")]
+pub use {egui_glow, glow};
+
+#[cfg(feature = "wgpu")]
+pub use {egui_wgpu, wgpu};
+
+mod epi;
 
 // Re-export everything in `epi` so `eframe` users don't have to care about what `epi` is:
 pub use epi::*;
@@ -69,7 +77,13 @@ pub use epi::*;
 // When compiling for web
 
 #[cfg(target_arch = "wasm32")]
-pub use egui_web::wasm_bindgen;
+mod web;
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm_bindgen;
+
+#[cfg(target_arch = "wasm32")]
+pub use web_sys;
 
 /// Install event listeners to register different input events
 /// and start running the given app.
@@ -85,17 +99,25 @@ pub use egui_web::wasm_bindgen;
 /// #[cfg(target_arch = "wasm32")]
 /// #[wasm_bindgen]
 /// pub fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue> {
-///     eframe::start_web(canvas_id, Box::new(|cc| Box::new(MyEguiApp::new(cc))))
+///     let web_options = eframe::WebOptions::default();
+///     eframe::start_web(canvas_id, web_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))))
 /// }
 /// ```
 #[cfg(target_arch = "wasm32")]
-pub fn start_web(canvas_id: &str, app_creator: AppCreator) -> Result<(), wasm_bindgen::JsValue> {
-    egui_web::start(canvas_id, app_creator)?;
+pub fn start_web(
+    canvas_id: &str,
+    web_options: WebOptions,
+    app_creator: AppCreator,
+) -> Result<(), wasm_bindgen::JsValue> {
+    web::start(canvas_id, web_options, app_creator)?;
     Ok(())
 }
 
 // ----------------------------------------------------------------------------
 // When compiling natively
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
 
 /// This is how you start a native (desktop) app.
 ///
@@ -135,5 +157,43 @@ pub fn start_web(canvas_id: &str, app_creator: AppCreator) -> Result<(), wasm_bi
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::needless_pass_by_value)]
 pub fn run_native(app_name: &str, native_options: NativeOptions, app_creator: AppCreator) -> ! {
-    egui_glow::run(app_name, &native_options, app_creator)
+    let renderer = native_options.renderer;
+
+    match renderer {
+        #[cfg(feature = "glow")]
+        Renderer::Glow => {
+            tracing::debug!("Using the glow renderer");
+            native::run::run_glow(app_name, &native_options, app_creator)
+        }
+
+        #[cfg(feature = "wgpu")]
+        Renderer::Wgpu => {
+            tracing::debug!("Using the wgpu renderer");
+            native::run::run_wgpu(app_name, &native_options, app_creator)
+        }
+    }
 }
+
+// ---------------------------------------------------------------------------
+
+/// Profiling macro for feature "puffin"
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! profile_function {
+    ($($arg: tt)*) => {
+        #[cfg(feature = "puffin")]
+        puffin::profile_function!($($arg)*);
+    };
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use profile_function;
+
+/// Profiling macro for feature "puffin"
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! profile_scope {
+    ($($arg: tt)*) => {
+        #[cfg(feature = "puffin")]
+        puffin::profile_scope!($($arg)*);
+    };
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use profile_scope;

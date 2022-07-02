@@ -1,10 +1,10 @@
 #![allow(unsafe_code)]
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use egui::{
     emath::Rect,
-    epaint::{Color32, Mesh, Primitive, Vertex},
+    epaint::{Color32, Mesh, PaintCallbackInfo, Primitive, Vertex},
 };
 use glow::HasContext as _;
 use memoffset::offset_of;
@@ -20,6 +20,20 @@ pub use glow::Context;
 const VERT_SRC: &str = include_str!("shader/vertex.glsl");
 const FRAG_SRC: &str = include_str!("shader/fragment.glsl");
 
+pub type TextureFilter = egui::TextureFilter;
+
+trait TextureFilterExt {
+    fn glow_code(&self) -> u32;
+}
+impl TextureFilterExt for TextureFilter {
+    fn glow_code(&self) -> u32 {
+        match self {
+            TextureFilter::Linear => glow::LINEAR,
+            TextureFilter::Nearest => glow::NEAREST,
+        }
+    }
+}
+
 /// An OpenGL painter using [`glow`].
 ///
 /// This is responsible for painting egui and managing egui textures.
@@ -28,7 +42,7 @@ const FRAG_SRC: &str = include_str!("shader/fragment.glsl");
 /// This struct must be destroyed with [`Painter::destroy`] before dropping, to ensure OpenGL
 /// objects have been properly deleted and are not leaked.
 pub struct Painter {
-    gl: Rc<glow::Context>,
+    gl: Arc<glow::Context>,
 
     max_texture_side: usize,
 
@@ -39,16 +53,13 @@ pub struct Painter {
     is_embedded: bool,
     vao: crate::vao::VertexArrayObject,
     srgb_support: bool,
-    /// The filter used for subsequent textures.
-    texture_filter: TextureFilter,
     post_process: Option<PostProcess>,
     vbo: glow::Buffer,
     element_array_buffer: glow::Buffer,
 
     textures: HashMap<egui::TextureId, glow::Texture>,
 
-    #[cfg(feature = "epi")]
-    next_native_tex_id: u64, // TODO: 128-bit texture space?
+    next_native_tex_id: u64,
 
     /// Stores outdated OpenGL textures that are yet to be deleted
     textures_to_destroy: Vec<glow::Texture>,
@@ -57,24 +68,23 @@ pub struct Painter {
     destroyed: bool,
 }
 
-#[derive(Copy, Clone)]
-pub enum TextureFilter {
-    Linear,
-    Nearest,
+/// A callback function that can be used to compose an [`egui::PaintCallback`] for custom rendering
+/// with [`glow`].
+///
+/// The callback is passed, the [`egui::PaintCallbackInfo`] and the [`Painter`] which can be used to
+/// access the OpenGL context.
+///
+/// # Example
+///
+/// See the [`custom3d_glow`](https://github.com/emilk/egui/blob/master/egui_demo_app/src/apps/custom3d_wgpu.rs) demo source for a detailed usage example.
+pub struct CallbackFn {
+    f: Box<dyn Fn(PaintCallbackInfo, &Painter) + Sync + Send>,
 }
 
-impl Default for TextureFilter {
-    fn default() -> Self {
-        TextureFilter::Linear
-    }
-}
-
-impl TextureFilter {
-    pub(crate) fn glow_code(&self) -> u32 {
-        match self {
-            TextureFilter::Linear => glow::LINEAR,
-            TextureFilter::Nearest => glow::NEAREST,
-        }
+impl CallbackFn {
+    pub fn new<F: Fn(PaintCallbackInfo, &Painter) + Sync + Send + 'static>(callback: F) -> Self {
+        let f = Box::new(callback);
+        CallbackFn { f }
     }
 }
 
@@ -92,12 +102,12 @@ impl Painter {
     /// * failed to create postprocess on webgl with `sRGB` support
     /// * failed to create buffer
     pub fn new(
-        gl: Rc<glow::Context>,
+        gl: Arc<glow::Context>,
         pp_fb_extent: Option<[i32; 2]>,
         shader_prefix: &str,
     ) -> Result<Painter, String> {
         crate::profile_function!();
-        check_for_gl_error!(&gl, "before Painter::new");
+        crate::check_for_gl_error_even_in_release!(&gl, "before Painter::new");
 
         let max_texture_side = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) } as usize;
 
@@ -205,7 +215,7 @@ impl Painter {
 
             let element_array_buffer = gl.create_buffer()?;
 
-            check_for_gl_error!(&gl, "after Painter::new");
+            crate::check_for_gl_error_even_in_release!(&gl, "after Painter::new");
 
             Ok(Painter {
                 gl,
@@ -217,12 +227,10 @@ impl Painter {
                 is_embedded: matches!(shader_version, ShaderVersion::Es100 | ShaderVersion::Es300),
                 vao,
                 srgb_support,
-                texture_filter: Default::default(),
                 post_process,
                 vbo,
                 element_array_buffer,
                 textures: Default::default(),
-                #[cfg(feature = "epi")]
                 next_native_tex_id: 1 << 32,
                 textures_to_destroy: Vec::new(),
                 destroyed: false,
@@ -231,7 +239,7 @@ impl Painter {
     }
 
     /// Access the shared glow context.
-    pub fn gl(&self) -> &std::rc::Rc<glow::Context> {
+    pub fn gl(&self) -> &Arc<glow::Context> {
         &self.gl
     }
 
@@ -290,9 +298,10 @@ impl Painter {
         (width_in_pixels, height_in_pixels)
     }
 
+    /// You are expected to have cleared the color buffer before calling this.
     pub fn paint_and_update_textures(
         &mut self,
-        inner_size: [u32; 2],
+        screen_size_px: [u32; 2],
         pixels_per_point: f32,
         clipped_primitives: &[egui::ClippedPrimitive],
         textures_delta: &egui::TexturesDelta,
@@ -302,7 +311,7 @@ impl Painter {
             self.set_texture(*id, image_delta);
         }
 
-        self.paint_primitives(inner_size, pixels_per_point, clipped_primitives);
+        self.paint_primitives(screen_size_px, pixels_per_point, clipped_primitives);
 
         for &id in &textures_delta.free {
             self.free_texture(id);
@@ -310,6 +319,7 @@ impl Painter {
     }
 
     /// Main entry-point for painting a frame.
+    ///
     /// You should call `target.clear_color(..)` before
     /// and `target.finish()` after this.
     ///
@@ -330,7 +340,7 @@ impl Painter {
     /// of the effects your program might have on this code. Look at the source if in doubt.
     pub fn paint_primitives(
         &mut self,
-        inner_size: [u32; 2],
+        screen_size_px: [u32; 2],
         pixels_per_point: f32,
         clipped_primitives: &[egui::ClippedPrimitive],
     ) {
@@ -339,11 +349,16 @@ impl Painter {
 
         if let Some(ref mut post_process) = self.post_process {
             unsafe {
-                post_process.begin(inner_size[0] as i32, inner_size[1] as i32);
+                post_process.begin(screen_size_px[0] as i32, screen_size_px[1] as i32);
                 post_process.bind();
+                self.gl.disable(glow::SCISSOR_TEST);
+                self.gl
+                    .viewport(0, 0, screen_size_px[0] as i32, screen_size_px[1] as i32);
+                // use the same clear-color as was set for the screen framebuffer.
+                self.gl.clear(glow::COLOR_BUFFER_BIT);
             }
         }
-        let size_in_pixels = unsafe { self.prepare_painting(inner_size, pixels_per_point) };
+        let size_in_pixels = unsafe { self.prepare_painting(screen_size_px, pixels_per_point) };
 
         for egui::ClippedPrimitive {
             clip_rect,
@@ -383,10 +398,14 @@ impl Painter {
                             viewport: callback.rect,
                             clip_rect: *clip_rect,
                             pixels_per_point,
-                            screen_size_px: inner_size,
+                            screen_size_px,
                         };
 
-                        callback.call(&info, self);
+                        if let Some(callback) = callback.callback.downcast_ref::<CallbackFn>() {
+                            (callback.f)(info, self);
+                        } else {
+                            tracing::warn!("Warning: Unsupported render callback. Expected egui_glow::CallbackFn");
+                        }
 
                         check_for_gl_error!(&self.gl, "callback");
 
@@ -395,7 +414,7 @@ impl Painter {
                             if let Some(ref mut post_process) = self.post_process {
                                 post_process.bind();
                             }
-                            self.prepare_painting(inner_size, pixels_per_point)
+                            self.prepare_painting(screen_size_px, pixels_per_point)
                         };
                     }
                 }
@@ -452,12 +471,6 @@ impl Painter {
         }
     }
 
-    // Set the filter to be used for any subsequent textures loaded via
-    // [`Self::set_texture`].
-    pub fn set_texture_filter(&mut self, texture_filter: TextureFilter) {
-        self.texture_filter = texture_filter;
-    }
-
     // ------------------------------------------------------------------------
 
     pub fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
@@ -483,7 +496,7 @@ impl Painter {
 
                 let data: &[u8] = bytemuck::cast_slice(image.pixels.as_ref());
 
-                self.upload_texture_srgb(delta.pos, image.size, data);
+                self.upload_texture_srgb(delta.pos, image.size, delta.filter, data);
             }
             egui::ImageData::Font(image) => {
                 assert_eq!(
@@ -502,12 +515,18 @@ impl Painter {
                     .flat_map(|a| a.to_array())
                     .collect();
 
-                self.upload_texture_srgb(delta.pos, image.size, &data);
+                self.upload_texture_srgb(delta.pos, image.size, delta.filter, &data);
             }
         };
     }
 
-    fn upload_texture_srgb(&mut self, pos: Option<[usize; 2]>, [w, h]: [usize; 2], data: &[u8]) {
+    fn upload_texture_srgb(
+        &mut self,
+        pos: Option<[usize; 2]>,
+        [w, h]: [usize; 2],
+        texture_filter: TextureFilter,
+        data: &[u8],
+    ) {
         assert_eq!(data.len(), w * h * 4);
         assert!(
             w >= 1 && h >= 1,
@@ -527,12 +546,12 @@ impl Painter {
             self.gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_MAG_FILTER,
-                self.texture_filter.glow_code() as i32,
+                texture_filter.glow_code() as i32,
             );
             self.gl.tex_parameter_i32(
                 glow::TEXTURE_2D,
                 glow::TEXTURE_MIN_FILTER,
-                self.texture_filter.glow_code() as i32,
+                texture_filter.glow_code() as i32,
             );
 
             self.gl.tex_parameter_i32(
@@ -603,6 +622,22 @@ impl Painter {
         self.textures.get(&texture_id).copied()
     }
 
+    #[allow(clippy::needless_pass_by_value)] // False positive
+    pub fn register_native_texture(&mut self, native: glow::Texture) -> egui::TextureId {
+        self.assert_not_destroyed();
+        let id = egui::TextureId::User(self.next_native_tex_id);
+        self.next_native_tex_id += 1;
+        self.textures.insert(id, native);
+        id
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // False positive
+    pub fn replace_native_texture(&mut self, id: egui::TextureId, replacing: glow::Texture) {
+        if let Some(old_tex) = self.textures.insert(id, replacing) {
+            self.textures_to_destroy.push(old_tex);
+        }
+    }
+
     unsafe fn destroy_gl(&self) {
         self.gl.delete_program(self.program);
         for tex in self.textures.values() {
@@ -635,6 +670,7 @@ impl Painter {
 }
 
 pub fn clear(gl: &glow::Context, screen_size_in_pixels: [u32; 2], clear_color: egui::Rgba) {
+    crate::profile_function!();
     unsafe {
         gl.disable(glow::SCISSOR_TEST);
 
@@ -645,13 +681,23 @@ pub fn clear(gl: &glow::Context, screen_size_in_pixels: [u32; 2], clear_color: e
             screen_size_in_pixels[1] as i32,
         );
 
-        let clear_color: Color32 = clear_color.into();
-        gl.clear_color(
-            clear_color[0] as f32 / 255.0,
-            clear_color[1] as f32 / 255.0,
-            clear_color[2] as f32 / 255.0,
-            clear_color[3] as f32 / 255.0,
-        );
+        if true {
+            // verified to be correct on eframe native (on Mac).
+            gl.clear_color(
+                clear_color[0] as f32,
+                clear_color[1] as f32,
+                clear_color[2] as f32,
+                clear_color[3] as f32,
+            );
+        } else {
+            let clear_color: Color32 = clear_color.into();
+            gl.clear_color(
+                clear_color[0] as f32 / 255.0,
+                clear_color[1] as f32 / 255.0,
+                clear_color[2] as f32 / 255.0,
+                clear_color[3] as f32 / 255.0,
+            );
+        }
         gl.clear(glow::COLOR_BUFFER_BIT);
     }
 }
@@ -662,25 +708,6 @@ impl Drop for Painter {
             tracing::warn!(
                 "You forgot to call destroy() on the egui glow painter. Resources will leak!"
             );
-        }
-    }
-}
-
-#[cfg(feature = "epi")]
-impl epi::NativeTexture for Painter {
-    type Texture = glow::Texture;
-
-    fn register_native_texture(&mut self, native: Self::Texture) -> egui::TextureId {
-        self.assert_not_destroyed();
-        let id = egui::TextureId::User(self.next_native_tex_id);
-        self.next_native_tex_id += 1;
-        self.textures.insert(id, native);
-        id
-    }
-
-    fn replace_native_texture(&mut self, id: egui::TextureId, replacing: Self::Texture) {
-        if let Some(old_tex) = self.textures.insert(id, replacing) {
-            self.textures_to_destroy.push(old_tex);
         }
     }
 }

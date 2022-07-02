@@ -1,5 +1,3 @@
-//! Example how to use [`epi::NativeTexture`] with glium.
-
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use glium::glutin;
@@ -8,7 +6,7 @@ fn main() {
     let event_loop = glutin::event_loop::EventLoop::with_user_event();
     let display = create_display(&event_loop);
 
-    let mut egui_glium = egui_glium::EguiGlium::new(&display);
+    let mut egui_glium = egui_glium::EguiGlium::new(&display, &event_loop);
 
     let png_data = include_bytes!("../../examples/retained_image/src/rust-logo-256x256.png");
     let image = load_glium_image(png_data);
@@ -26,7 +24,7 @@ fn main() {
         let mut redraw = || {
             let mut quit = false;
 
-            let needs_repaint = egui_glium.run(&display, |egui_ctx| {
+            let repaint_after = egui_glium.run(&display, |egui_ctx| {
                 egui::SidePanel::left("my_side_panel").show(egui_ctx, |ui| {
                     if ui
                         .add(egui::Button::image_and_text(
@@ -46,9 +44,13 @@ fn main() {
 
             *control_flow = if quit {
                 glutin::event_loop::ControlFlow::Exit
-            } else if needs_repaint {
+            } else if repaint_after.is_zero() {
                 display.gl_window().window().request_redraw();
                 glutin::event_loop::ControlFlow::Poll
+            } else if let Some(repaint_after_instant) =
+                std::time::Instant::now().checked_add(repaint_after)
+            {
+                glutin::event_loop::ControlFlow::WaitUntil(repaint_after_instant)
             } else {
                 glutin::event_loop::ControlFlow::Wait
             };
@@ -85,7 +87,12 @@ fn main() {
 
                 egui_glium.on_event(&event);
 
-                display.gl_window().window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                display.gl_window().window().request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
+            }
+            glutin::event::Event::NewEvents(glutin::event::StartCause::ResumeTimeReached {
+                ..
+            }) => {
+                display.gl_window().window().request_redraw();
             }
 
             _ => (),

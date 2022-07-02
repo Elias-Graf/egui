@@ -177,7 +177,7 @@
 //! This means it is responsibility of the egui user to store the state (`value`) so that it persists between frames.
 //!
 //! It can be useful to read the code for the toggle switch example widget to get a better understanding
-//! of how egui works: <https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/toggle_switch.rs>.
+//! of how egui works: <https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/toggle_switch.rs>.
 //!
 //! Read more about the pros and cons of immediate mode at <https://github.com/emilk/egui#why-immediate-mode>.
 //!
@@ -291,6 +291,10 @@
 //! }); // the temporary settings are reverted here
 //! # });
 //! ```
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -322,10 +326,12 @@ pub use epaint;
 pub use epaint::emath;
 
 pub use emath::{lerp, pos2, remap, remap_clamp, vec2, Align, Align2, NumExt, Pos2, Rect, Vec2};
+#[cfg(feature = "color-hex")]
+pub use epaint::hex_color;
 pub use epaint::{
     color, mutex,
     text::{FontData, FontDefinitions, FontFamily, FontId, FontTweak},
-    textures::TexturesDelta,
+    textures::{TextureFilter, TexturesDelta},
     ClippedPrimitive, Color32, ColorImage, FontImage, ImageData, Mesh, PaintCallback,
     PaintCallbackInfo, Rgba, Rounding, Shape, Stroke, TextureHandle, TextureId,
 };
@@ -482,6 +488,8 @@ pub mod special_emojis {
 
     /// The Github logo.
     pub const GITHUB: char = '';
+    /// The Twitter bird.
+    pub const TWITTER: char = '';
 
     /// The word `git`.
     pub const GIT: char = '';
@@ -493,7 +501,7 @@ pub mod special_emojis {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum WidgetType {
-    Label, // TODO: emit Label events
+    Label, // TODO(emilk): emit Label events
     /// e.g. a hyperlink
     Link,
     TextEdit,
@@ -519,6 +527,7 @@ pub enum WidgetType {
 /// For use in tests; especially doctests.
 pub fn __run_test_ctx(mut run_ui: impl FnMut(&Context)) {
     let ctx = Context::default();
+    ctx.set_fonts(FontDefinitions::empty()); // prevent fonts from being loaded (save CPU time)
     let _ = ctx.run(Default::default(), |ctx| {
         run_ui(ctx);
     });
@@ -527,6 +536,7 @@ pub fn __run_test_ctx(mut run_ui: impl FnMut(&Context)) {
 /// For use in tests; especially doctests.
 pub fn __run_test_ui(mut add_contents: impl FnMut(&mut Ui)) {
     let ctx = Context::default();
+    ctx.set_fonts(FontDefinitions::empty()); // prevent fonts from being loaded (save CPU time)
     let _ = ctx.run(Default::default(), |ctx| {
         crate::CentralPanel::default().show(ctx, |ui| {
             add_contents(ui);

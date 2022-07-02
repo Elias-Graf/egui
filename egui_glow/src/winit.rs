@@ -1,7 +1,7 @@
 pub use egui_winit;
 use egui_winit::winit;
 
-/// Use [`egui`] from a [`glow`] app.
+/// Use [`egui`] from a [`glow`] app based on [`winit`].
 pub struct EguiGlow {
     pub egui_ctx: egui::Context,
     pub egui_winit: egui_winit::State,
@@ -12,7 +12,10 @@ pub struct EguiGlow {
 }
 
 impl EguiGlow {
-    pub fn new(window: &winit::window::Window, gl: std::rc::Rc<glow::Context>) -> Self {
+    pub fn new<E>(
+        event_loop: &winit::event_loop::EventLoopWindowTarget<E>,
+        gl: std::sync::Arc<glow::Context>,
+    ) -> Self {
         let painter = crate::Painter::new(gl, None, "")
             .map_err(|error| {
                 tracing::error!("error occurred in initializing painter:\n{}", error);
@@ -21,7 +24,7 @@ impl EguiGlow {
 
         Self {
             egui_ctx: Default::default(),
-            egui_winit: egui_winit::State::new(painter.max_texture_side(), window),
+            egui_winit: egui_winit::State::new(event_loop),
             painter,
             shapes: Default::default(),
             textures_delta: Default::default(),
@@ -38,18 +41,18 @@ impl EguiGlow {
         self.egui_winit.on_event(&self.egui_ctx, event)
     }
 
-    /// Returns `true` if egui requests a repaint.
+    /// Returns the `Duration` of the timeout after which egui should be repainted even if there's no new events.
     ///
     /// Call [`Self::paint`] later to paint.
     pub fn run(
         &mut self,
         window: &winit::window::Window,
         run_ui: impl FnMut(&egui::Context),
-    ) -> bool {
+    ) -> std::time::Duration {
         let raw_input = self.egui_winit.take_egui_input(window);
         let egui::FullOutput {
             platform_output,
-            needs_repaint,
+            repaint_after,
             textures_delta,
             shapes,
         } = self.egui_ctx.run(raw_input, run_ui);
@@ -59,7 +62,7 @@ impl EguiGlow {
 
         self.shapes = shapes;
         self.textures_delta.append(textures_delta);
-        needs_repaint
+        repaint_after
     }
 
     /// Paint the results of the last call to [`Self::run`].

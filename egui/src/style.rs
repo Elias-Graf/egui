@@ -21,14 +21,14 @@ pub enum TextStyle {
     /// Normal labels. Easily readable, doesn't take up too much space.
     Body,
 
-    /// Same size as [`Self::Body]`, but used when monospace is important (for aligning number, code snippets, etc).
+    /// Same size as [`Self::Body`], but used when monospace is important (for aligning number, code snippets, etc).
     Monospace,
 
-    /// Buttons. Maybe slightly bigger than [`Self::Body]`.
+    /// Buttons. Maybe slightly bigger than [`Self::Body`].
     /// Signifies that he item is interactive.
     Button,
 
-    /// Heading. Probably larger than [`Self::Body]`.
+    /// Heading. Probably larger than [`Self::Body`].
     Heading,
 
     /// A user-chosen style, found in [`Style::text_styles`].
@@ -204,7 +204,7 @@ pub struct Style {
 }
 
 impl Style {
-    // TODO: rename style.interact() to maybe... `style.interactive` ?
+    // TODO(emilk): rename style.interact() to maybe... `style.interactive` ?
     /// Use this style for interactive things.
     /// Note that you must already have a response,
     /// i.e. you must allocate space and interact BEFORE painting the widget!
@@ -258,17 +258,21 @@ pub struct Spacing {
     /// Minimum size of a [`DragValue`], color picker button, and other small widgets.
     /// `interact_size.y` is the default height of button, slider, etc.
     /// Anything clickable should be (at least) this size.
-    pub interact_size: Vec2, // TODO: rename min_interact_size ?
+    pub interact_size: Vec2, // TODO(emilk): rename min_interact_size ?
 
     /// Default width of a [`Slider`] and [`ComboBox`](crate::ComboBox).
-    pub slider_width: f32, // TODO: rename big_interact_size ?
+    pub slider_width: f32, // TODO(emilk): rename big_interact_size ?
 
     /// Default width of a [`TextEdit`].
     pub text_edit_width: f32,
 
     /// Checkboxes, radio button and collapsing headers have an icon at the start.
-    /// This is the width/height of this icon.
+    /// This is the width/height of the outer part of this icon (e.g. the BOX of the checkbox).
     pub icon_width: f32,
+
+    /// Checkboxes, radio button and collapsing headers have an icon at the start.
+    /// This is the width/height of the inner part of this icon (e.g. the check of the checkbox).
+    pub icon_width_inner: f32,
 
     /// Checkboxes, radio button and collapsing headers have an icon at the start.
     /// This is the spacing between the icon and the text
@@ -289,15 +293,14 @@ pub struct Spacing {
 impl Spacing {
     /// Returns small icon rectangle and big icon rectangle
     pub fn icon_rectangles(&self, rect: Rect) -> (Rect, Rect) {
-        let box_side = self.icon_width;
+        let icon_width = self.icon_width;
         let big_icon_rect = Rect::from_center_size(
-            pos2(rect.left() + box_side / 2.0, rect.center().y),
-            vec2(box_side, box_side),
+            pos2(rect.left() + icon_width / 2.0, rect.center().y),
+            vec2(icon_width, icon_width),
         );
 
-        let small_rect_side = 8.0; // TODO: make a parameter
         let small_icon_rect =
-            Rect::from_center_size(big_icon_rect.center(), Vec2::splat(small_rect_side));
+            Rect::from_center_size(big_icon_rect.center(), Vec2::splat(self.icon_width_inner));
 
         (small_icon_rect, big_icon_rect)
     }
@@ -634,6 +637,7 @@ impl Default for Spacing {
             slider_width: 100.0,
             text_edit_width: 280.0,
             icon_width: 14.0,
+            icon_width_inner: 8.0,
             icon_spacing: 4.0,
             tooltip_width: 600.0,
             combo_height: 200.0,
@@ -909,6 +913,7 @@ impl Spacing {
             slider_width,
             text_edit_width,
             icon_width,
+            icon_width_inner,
             icon_spacing,
             tooltip_width,
             indent_ends_with_horizontal_line,
@@ -972,7 +977,12 @@ impl Spacing {
             ui.label("Checkboxes etc:");
             ui.add(
                 DragValue::new(icon_width)
-                    .prefix("width:")
+                    .prefix("outer icon width:")
+                    .clamp_range(0.0..=60.0),
+            );
+            ui.add(
+                DragValue::new(icon_width_inner)
+                    .prefix("inner icon width:")
                     .clamp_range(0.0..=60.0),
             );
             ui.add(
@@ -1216,7 +1226,7 @@ impl DebugOptions {
     }
 }
 
-// TODO: improve and standardize `slider_vec2`
+// TODO(emilk): improve and standardize `slider_vec2`
 fn slider_vec2<'a>(
     value: &'a mut Vec2,
     range: std::ops::RangeInclusive<f32>,

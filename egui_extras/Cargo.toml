@@ -1,6 +1,6 @@
 [package]
 name = "egui_extras"
-version = "0.17.0"
+version = "0.18.0"
 authors = [
   "Dominik Rössler <dominik@freshx.de>",
   "Emil Ernerfeldt <emil.ernerfeldt@gmail.com>",
@@ -26,31 +26,35 @@ all-features = true
 [features]
 default = []
 
-http = ["dep:ehttp"]
-
-# Support loading svg images
-svg = ["resvg", "tiny-skia", "usvg"]
-
-# Datepicker widget
+## Enable [`DatePickerButton`] widget.
 datepicker = ["chrono"]
 
-# Persistence
-persistence = ["serde"]
+## Allow serialization using [`serde`](https://docs.rs/serde).
+serde = ["dep:serde"]
 
-# Log warnings using `tracing` crate
+## Support loading svg images.
+svg = ["resvg", "tiny-skia", "usvg"]
+
+## Log warnings using `tracing` crate.
 tracing = ["dep:tracing", "egui/tracing"]
 
 [dependencies]
-egui = { version = "0.17.0", path = "../egui", default-features = false }
+egui = { version = "0.18.0", path = "../egui", default-features = false }
 
-# Optional dependencies:
+#! ### Optional dependencies
 
 # Date operations needed for datepicker widget
 chrono = { version = "0.4", optional = true }
 
-# Add support for loading images with the `image` crate.
-# You also need to ALSO opt-in to the image formats you want to support, like so:
-#     image = { version = "0.24", features = ["jpeg", "png"] }
+## Enable this when generating docs.
+document-features = { version = "0.2", optional = true }
+
+## Add support for loading images with the [`image`](https://docs.rs/image) crate.
+##
+## You also need to ALSO opt-in to the image formats you want to support, like so:
+## ```toml
+## image = { version = "0.24", features = ["jpeg", "png"] }
+## ```
 image = { version = "0.24", optional = true, default-features = false }
 
 # svg feature
@@ -58,7 +62,7 @@ resvg = { version = "0.22", optional = true }
 tiny-skia = { version = "0.6", optional = true }
 usvg = { version = "0.22", optional = true }
 
-# feature "persistence":
+# feature "serde":
 serde = { version = "1", features = ["derive"], optional = true }
 
 # feature "tracing"

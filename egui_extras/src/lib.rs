@@ -1,4 +1,10 @@
-//! This is a crate that adds some features on top top of [`egui`](https://github.com/emilk/egui). This crate are for experimental features, and features that require big dependencies that does not belong in `egui`.
+//! This is a crate that adds some features on top top of [`egui`](https://github.com/emilk/egui).
+//!
+//! This crate are for experimental features, and features that require big dependencies that does not belong in `egui`.
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -24,8 +30,6 @@ pub use crate::strip::*;
 pub use crate::table::*;
 
 /// Log an error with either `tracing` or `eprintln`
-#[doc(hidden)]
-#[macro_export]
 macro_rules! log_err {
     ($fmt: literal, $($arg: tt)*) => {{
         #[cfg(feature = "tracing")]
@@ -37,10 +41,9 @@ macro_rules! log_err {
         );
     }};
 }
+pub(crate) use log_err;
 
 /// Panic in debug builds, log otherwise.
-#[doc(hidden)]
-#[macro_export]
 macro_rules! log_or_panic {
     ($fmt: literal, $($arg: tt)*) => {{
         if cfg!(debug_assertions) {
@@ -50,3 +53,4 @@ macro_rules! log_or_panic {
         }
     }};
 }
+pub(crate) use log_or_panic;

@@ -5,7 +5,7 @@ use crate::{
     animation_manager::AnimationManager, data::output::PlatformOutput, frame_state::FrameState,
     input_state::*, layers::GraphicLayers, memory::Options, output::FullOutput, TextureHandle, *,
 };
-use epaint::{mutex::*, stats::*, text::Fonts, TessellationOptions, *};
+use epaint::{mutex::*, stats::*, text::Fonts, textures::TextureFilter, TessellationOptions, *};
 
 // ----------------------------------------------------------------------------
 
@@ -19,6 +19,7 @@ impl Default for WrappedTextureManager {
         let font_id = tex_mngr.alloc(
             "egui_font_texture".into(),
             epaint::FontImage::new([0, 0]).into(),
+            Default::default(),
         );
         assert_eq!(font_id, TextureId::default());
 
@@ -27,7 +28,6 @@ impl Default for WrappedTextureManager {
 }
 
 // ----------------------------------------------------------------------------
-
 #[derive(Default)]
 struct ContextImpl {
     /// `None` until the start of the first frame.
@@ -46,17 +46,21 @@ struct ContextImpl {
     output: PlatformOutput,
 
     paint_stats: PaintStats,
-
+    /// the duration backend will poll for new events, before forcing another egui update
+    /// even if there's no new events.
+    repaint_after: std::time::Duration,
     /// While positive, keep requesting repaints. Decrement at the end of each frame.
     repaint_requests: u32,
     request_repaint_callbacks: Option<Box<dyn Fn() + Send + Sync>>,
+    requested_repaint_last_frame: bool,
 }
 
 impl ContextImpl {
     fn begin_frame_mut(&mut self, new_raw_input: RawInput) {
         self.memory.begin_frame(&self.input, &new_raw_input);
 
-        self.input = std::mem::take(&mut self.input).begin_frame(new_raw_input);
+        self.input = std::mem::take(&mut self.input)
+            .begin_frame(new_raw_input, self.requested_repaint_last_frame);
 
         if let Some(new_pixels_per_point) = self.memory.new_pixels_per_point.take() {
             self.input.pixels_per_point = new_pixels_per_point;
@@ -375,7 +379,7 @@ impl Context {
             for pointer_event in &input.pointer.pointer_events {
                 match pointer_event {
                     PointerEvent::Moved(_) => {}
-                    PointerEvent::Pressed(_) => {
+                    PointerEvent::Pressed { .. } => {
                         if hovered {
                             if sense.click && memory.interaction.click_id.is_none() {
                                 // potential start of a click
@@ -571,6 +575,39 @@ impl Context {
         }
     }
 
+    /// Request repaint after the specified duration elapses in the case of no new input
+    /// events being received.
+    ///
+    /// The function can be multiple times, but only the *smallest* duration will be considered.
+    /// So, if the function is called two times with `1 second` and `2 seconds`, egui will repaint
+    /// after `1 second`
+    ///
+    /// This is primarily useful for applications who would like to save battery by avoiding wasted
+    /// redraws when the app is not in focus. But sometimes the GUI of the app might become stale
+    /// and outdated if it is not updated for too long.
+    ///
+    /// Lets say, something like a stop watch widget that displays the time in seconds. You would waste
+    /// resources repainting multiple times within the same second (when you have no input),
+    /// just calculate the difference of duration between current time and next second change,
+    /// and call this function, to make sure that you are displaying the latest updated time, but
+    /// not wasting resources on needless repaints within the same second.
+    ///
+    /// NOTE: only works if called before `Context::end_frame()`. to force egui to update,
+    /// use `Context::request_repaint()` instead.
+    ///
+    /// ### Quirk:
+    /// Duration begins at the next frame. lets say for example that its a very inefficient app
+    /// and takes 500 milliseconds per frame at 2 fps. The widget / user might want a repaint in
+    /// next 500 milliseconds. Now, app takes 1000 ms per frame (1 fps) because the backend event
+    /// timeout takes 500 milli seconds AFTER the vsync swap buffer.
+    /// So, its not that we are requesting repaint within X duration. We are rather timing out
+    /// during app idle time where we are not receiving any new input events.
+    pub fn request_repaint_after(&self, duration: std::time::Duration) {
+        // Maybe we can check if duration is ZERO, and call self.request_repaint()?
+        let mut ctx = self.write();
+        ctx.repaint_after = ctx.repaint_after.min(duration);
+    }
+
     /// For integrations: this callback will be called when an egui user calls [`Self::request_repaint`].
     ///
     /// This lets you wake up a sleeping UI thread.
@@ -639,7 +676,7 @@ impl Context {
     /// Will become active at the start of the next frame.
     ///
     /// Note that this may be overwritten by input from the integration via [`RawInput::pixels_per_point`].
-    /// For instance, when using `egui_web` the browsers native zoom level will always be used.
+    /// For instance, when using `eframe` on web, the browsers native zoom level will always be used.
     pub fn set_pixels_per_point(&self, pixels_per_point: f32) {
         if pixels_per_point != self.pixels_per_point() {
             self.request_repaint();
@@ -691,7 +728,11 @@ impl Context {
     ///     fn ui(&mut self, ui: &mut egui::Ui) {
     ///         let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
     ///             // Load the texture only once.
-    ///             ui.ctx().load_texture("my-image", egui::ColorImage::example())
+    ///             ui.ctx().load_texture(
+    ///                 "my-image",
+    ///                 egui::ColorImage::example(),
+    ///                 egui::TextureFilter::Linear
+    ///             )
     ///         });
     ///
     ///         // Show the image:
@@ -705,6 +746,7 @@ impl Context {
         &self,
         name: impl Into<String>,
         image: impl Into<ImageData>,
+        filter: TextureFilter,
     ) -> TextureHandle {
         let name = name.into();
         let image = image.into();
@@ -718,7 +760,7 @@ impl Context {
             max_texture_side
         );
         let tex_mngr = self.tex_manager();
-        let tex_id = tex_mngr.write().alloc(name, image);
+        let tex_id = tex_mngr.write().alloc(name, image, filter);
         TextureHandle::new(tex_mngr, tex_id)
     }
 
@@ -797,18 +839,26 @@ impl Context {
 
         let platform_output: PlatformOutput = std::mem::take(&mut self.output());
 
-        let needs_repaint = if self.read().repaint_requests > 0 {
+        // if repaint_requests is greater than zero. just set the duration to zero for immediate
+        // repaint. if there's no repaint requests, then we can use the actual repaint_after instead.
+        let repaint_after = if self.read().repaint_requests > 0 {
             self.write().repaint_requests -= 1;
-            true
+            std::time::Duration::ZERO
         } else {
-            false
+            self.read().repaint_after
         };
 
+        self.write().requested_repaint_last_frame = repaint_after.is_zero();
+        // make sure we reset the repaint_after duration.
+        // otherwise, if repaint_after is low, then any widget setting repaint_after next frame,
+        // will fail to overwrite the previous lower value. and thus, repaints will never
+        // go back to higher values.
+        self.write().repaint_after = std::time::Duration::MAX;
         let shapes = self.drain_paint_lists();
 
         FullOutput {
             platform_output,
-            needs_repaint,
+            repaint_after,
             textures_delta,
             shapes,
         }
@@ -830,14 +880,17 @@ impl Context {
 
         let pixels_per_point = self.pixels_per_point();
         let tessellation_options = *self.tessellation_options();
-        let font_image_size = self.fonts().font_image_size();
+        let texture_atlas = self.fonts().texture_atlas();
+        let font_tex_size = texture_atlas.lock().size();
+        let prepared_discs = texture_atlas.lock().prepared_discs();
 
         let paint_stats = PaintStats::from_shapes(&shapes);
         let clipped_primitives = tessellator::tessellate_shapes(
             pixels_per_point,
             tessellation_options,
+            font_tex_size,
+            prepared_discs,
             shapes,
-            font_image_size,
         );
         self.write().paint_stats = paint_stats.with_clipped_primitives(&clipped_primitives);
         clipped_primitives
@@ -1221,7 +1274,7 @@ impl Context {
                         continue;
                     }
                     let text = format!("{} - {:?}", layer_id.short_debug_format(), area.rect(),);
-                    // TODO: `Sense::hover_highlight()`
+                    // TODO(emilk): `Sense::hover_highlight()`
                     if ui
                         .add(Label::new(RichText::new(text).monospace()).sense(Sense::click()))
                         .hovered
@@ -1238,11 +1291,12 @@ impl Context {
         ui.horizontal(|ui| {
             ui.label(format!(
                 "{} collapsing headers",
-                self.data().count::<containers::collapsing_header::State>()
+                self.data()
+                    .count::<containers::collapsing_header::InnerState>()
             ));
             if ui.button("Reset").clicked() {
                 self.data()
-                    .remove_by_type::<containers::collapsing_header::State>();
+                    .remove_by_type::<containers::collapsing_header::InnerState>();
             }
         });
 

@@ -27,7 +27,7 @@ impl TextureManager {
     /// MUST have a white pixel at (0,0) ([`crate::WHITE_UV`]).
     ///
     /// The texture is given a retain-count of `1`, requiring one call to [`Self::free`] to free it.
-    pub fn alloc(&mut self, name: String, image: ImageData) -> TextureId {
+    pub fn alloc(&mut self, name: String, image: ImageData, filter: TextureFilter) -> TextureId {
         let id = TextureId::Managed(self.next_id);
         self.next_id += 1;
 
@@ -36,9 +36,10 @@ impl TextureManager {
             size: image.size(),
             bytes_per_pixel: image.bytes_per_pixel(),
             retain_count: 1,
+            filter,
         });
 
-        self.delta.set.insert(id, ImageDelta::full(image));
+        self.delta.set.push((id, ImageDelta::full(image, filter)));
         id
     }
 
@@ -46,17 +47,22 @@ impl TextureManager {
     /// or update a region of it.
     pub fn set(&mut self, id: TextureId, delta: ImageDelta) {
         if let Some(meta) = self.metas.get_mut(&id) {
-            if delta.is_whole() {
+            if let Some(pos) = delta.pos {
+                crate::epaint_assert!(
+                    pos[0] + delta.image.width() <= meta.size[0]
+                        && pos[1] + delta.image.height() <= meta.size[1],
+                    "Partial texture update is outside the bounds of texture {id:?}",
+                );
+            } else {
+                // whole update
                 meta.size = delta.image.size();
                 meta.bytes_per_pixel = delta.image.bytes_per_pixel();
+                // since we update the whole image, we can discard all old enqueued deltas
+                self.delta.set.retain(|(x, _)| x != &id);
             }
-            self.delta.set.insert(id, delta);
+            self.delta.set.push((id, delta));
         } else {
-            crate::epaint_assert!(
-                false,
-                "Tried setting texture {:?} which is not allocated",
-                id
-            );
+            crate::epaint_assert!(false, "Tried setting texture {id:?} which is not allocated");
         }
     }
 
@@ -70,11 +76,7 @@ impl TextureManager {
                 self.delta.free.push(id);
             }
         } else {
-            crate::epaint_assert!(
-                false,
-                "Tried freeing texture {:?} which is not allocated",
-                id
-            );
+            crate::epaint_assert!(false, "Tried freeing texture {id:?} which is not allocated");
         }
     }
 
@@ -87,8 +89,7 @@ impl TextureManager {
         } else {
             crate::epaint_assert!(
                 false,
-                "Tried retaining texture {:?} which is not allocated",
-                id
+                "Tried retaining texture {id:?} which is not allocated",
             );
         }
     }
@@ -130,6 +131,31 @@ pub struct TextureMeta {
 
     /// Free when this reaches zero.
     pub retain_count: usize,
+
+    /// The texture filtering mode to use when rendering
+    pub filter: TextureFilter,
+}
+
+/// How the texture texels are filtered.
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum TextureFilter {
+    /// Show the nearest pixel value.
+    ///
+    /// When zooming in you will get sharp, square pixels/texels.
+    /// When zooming out you will get a very crisp (and aliased) look.
+    Nearest,
+
+    /// Linearly interpolate the nearest neighbors, creating a smoother look when zooming in and out.
+    ///
+    /// This is the default.
+    Linear,
+}
+
+impl Default for TextureFilter {
+    fn default() -> Self {
+        Self::Linear
+    }
 }
 
 impl TextureMeta {
@@ -150,7 +176,7 @@ impl TextureMeta {
 #[must_use = "The painter must take care of this"]
 pub struct TexturesDelta {
     /// New or changed textures. Apply before painting.
-    pub set: AHashMap<TextureId, ImageDelta>,
+    pub set: Vec<(TextureId, ImageDelta)>,
 
     /// Textures to free after painting.
     pub free: Vec<TextureId>,

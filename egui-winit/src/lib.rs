@@ -2,8 +2,14 @@
 //!
 //! The library translates winit events to egui, handled copy/paste,
 //! updates the cursor, open links clicked in egui, etc.
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::manual_range_contains)]
+
+use std::os::raw::c_void;
 
 pub use egui;
 pub use winit;
@@ -12,10 +18,17 @@ pub mod clipboard;
 pub mod screen_reader;
 mod window_settings;
 
-#[cfg(feature = "epi")]
-pub mod epi;
-
 pub use window_settings::WindowSettings;
+
+use winit::event_loop::EventLoopWindowTarget;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use winit::platform::unix::EventLoopWindowTargetExtUnix;
 
 pub fn native_pixels_per_point(window: &winit::window::Window) -> f32 {
     window.scale_factor() as f32
@@ -52,35 +65,44 @@ pub struct State {
 }
 
 impl State {
-    /// Initialize with:
-    /// * `max_texture_side`: e.g. `GL_MAX_TEXTURE_SIZE`
-    /// * the native `pixels_per_point` (dpi scaling).
-    pub fn new(max_texture_side: usize, window: &winit::window::Window) -> Self {
-        Self::from_pixels_per_point(max_texture_side, native_pixels_per_point(window))
+    pub fn new<T>(event_loop: &EventLoopWindowTarget<T>) -> Self {
+        Self::new_with_wayland_display(get_wayland_display(event_loop))
     }
 
-    /// Initialize with:
-    /// * `max_texture_side`: e.g. `GL_MAX_TEXTURE_SIZE`
-    /// * the given `pixels_per_point` (dpi scaling).
-    pub fn from_pixels_per_point(max_texture_side: usize, pixels_per_point: f32) -> Self {
+    pub fn new_with_wayland_display(wayland_display: Option<*mut c_void>) -> Self {
         Self {
             start_time: instant::Instant::now(),
-            egui_input: egui::RawInput {
-                pixels_per_point: Some(pixels_per_point),
-                max_texture_side: Some(max_texture_side),
-                ..Default::default()
-            },
+            egui_input: Default::default(),
             pointer_pos_in_points: None,
             any_pointer_button_down: false,
             current_cursor_icon: egui::CursorIcon::Default,
-            current_pixels_per_point: pixels_per_point,
+            current_pixels_per_point: 1.0,
 
-            clipboard: Default::default(),
+            clipboard: clipboard::Clipboard::new(wayland_display),
             screen_reader: screen_reader::ScreenReader::default(),
 
             simulate_touch_screen: false,
             pointer_touch_id: None,
         }
+    }
+
+    /// Call this once a graphics context has been created to update the maximum texture dimensions
+    /// that egui will use.
+    pub fn set_max_texture_side(&mut self, max_texture_side: usize) {
+        self.egui_input.max_texture_side = Some(max_texture_side);
+    }
+
+    /// Call this when a new native Window is created for rendering to initialize the `pixels_per_point`
+    /// for that window.
+    ///
+    /// In particular, on Android it is necessary to call this after each `Resumed` lifecycle
+    /// event, each time a new native window is created.
+    ///
+    /// Once this has been initialized for a new window then this state will be maintained by handling
+    /// [`winit::event::WindowEvent::ScaleFactorChanged`] events.
+    pub fn set_pixels_per_point(&mut self, pixels_per_point: f32) {
+        self.egui_input.pixels_per_point = Some(pixels_per_point);
+        self.current_pixels_per_point = pixels_per_point;
     }
 
     /// The number of physical pixels per logical point,
@@ -454,10 +476,9 @@ impl State {
             open_url,
             copied_text,
             events: _,                    // handled above
-            mutable_text_under_cursor: _, // only used in egui_web
+            mutable_text_under_cursor: _, // only used in eframe web
             text_cursor_pos,
         } = platform_output;
-
         self.current_pixels_per_point = egui_ctx.pixels_per_point(); // someone can have changed it to scale the UI
 
         self.set_cursor_icon(window, cursor_icon);
@@ -477,6 +498,7 @@ impl State {
 
     fn set_cursor_icon(&mut self, window: &winit::window::Window, cursor_icon: egui::CursorIcon) {
         // prevent flickering near frame boundary when Windows OS tries to control cursor icon for window resizing
+        #[cfg(windows)]
         if self.current_cursor_icon == cursor_icon {
             return;
         }
@@ -545,6 +567,8 @@ fn translate_mouse_button(button: winit::event::MouseButton) -> Option<egui::Poi
         winit::event::MouseButton::Left => Some(egui::PointerButton::Primary),
         winit::event::MouseButton::Right => Some(egui::PointerButton::Secondary),
         winit::event::MouseButton::Middle => Some(egui::PointerButton::Middle),
+        winit::event::MouseButton::Other(1) => Some(egui::PointerButton::Extra1),
+        winit::event::MouseButton::Other(2) => Some(egui::PointerButton::Extra2),
         winit::event::MouseButton::Other(_) => None,
     }
 }
@@ -610,6 +634,27 @@ fn translate_virtual_key_code(key: winit::event::VirtualKeyCode) -> Option<egui:
         VirtualKeyCode::Y => Key::Y,
         VirtualKeyCode::Z => Key::Z,
 
+        VirtualKeyCode::F1 => Key::F1,
+        VirtualKeyCode::F2 => Key::F2,
+        VirtualKeyCode::F3 => Key::F3,
+        VirtualKeyCode::F4 => Key::F4,
+        VirtualKeyCode::F5 => Key::F5,
+        VirtualKeyCode::F6 => Key::F6,
+        VirtualKeyCode::F7 => Key::F7,
+        VirtualKeyCode::F8 => Key::F8,
+        VirtualKeyCode::F9 => Key::F9,
+        VirtualKeyCode::F10 => Key::F10,
+        VirtualKeyCode::F11 => Key::F11,
+        VirtualKeyCode::F12 => Key::F12,
+        VirtualKeyCode::F13 => Key::F13,
+        VirtualKeyCode::F14 => Key::F14,
+        VirtualKeyCode::F15 => Key::F15,
+        VirtualKeyCode::F16 => Key::F16,
+        VirtualKeyCode::F17 => Key::F17,
+        VirtualKeyCode::F18 => Key::F18,
+        VirtualKeyCode::F19 => Key::F19,
+        VirtualKeyCode::F20 => Key::F20,
+
         _ => {
             return None;
         }
@@ -660,24 +705,46 @@ fn translate_cursor(cursor_icon: egui::CursorIcon) -> Option<winit::window::Curs
     }
 }
 
+/// Returns a Wayland display handle if the target is running Wayland
+fn get_wayland_display<T>(_event_loop: &EventLoopWindowTarget<T>) -> Option<*mut c_void> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        return _event_loop.wayland_display();
+    }
+
+    #[allow(unreachable_code)]
+    {
+        let _ = _event_loop;
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 /// Profiling macro for feature "puffin"
-#[doc(hidden)]
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! profile_function {
     ($($arg: tt)*) => {
         #[cfg(feature = "puffin")]
         puffin::profile_function!($($arg)*);
     };
 }
+#[allow(unused_imports)]
+pub(crate) use profile_function;
 
 /// Profiling macro for feature "puffin"
-#[doc(hidden)]
-#[macro_export]
+#[allow(unused_macros)]
 macro_rules! profile_scope {
     ($($arg: tt)*) => {
         #[cfg(feature = "puffin")]
         puffin::profile_scope!($($arg)*);
     };
 }
+#[allow(unused_imports)]
+pub(crate) use profile_scope;

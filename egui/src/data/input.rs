@@ -60,7 +60,7 @@ pub struct RawInput {
     /// Dragged files dropped into egui.
     ///
     /// Note: when using `eframe` on Windows you need to enable
-    /// drag-and-drop support using `epi::NativeOptions`.
+    /// drag-and-drop support using `eframe::NativeOptions`.
     pub dropped_files: Vec<DroppedFile>,
 }
 
@@ -131,7 +131,7 @@ impl RawInput {
 pub struct HoveredFile {
     /// Set by the `egui-winit` backend.
     pub path: Option<std::path::PathBuf>,
-    /// With the `egui_web` backend, this is set to the mime-type of the file (if available).
+    /// With the `eframe` web backend, this is set to the mime-type of the file (if available).
     pub mime: String,
 }
 
@@ -141,11 +141,11 @@ pub struct HoveredFile {
 pub struct DroppedFile {
     /// Set by the `egui-winit` backend.
     pub path: Option<std::path::PathBuf>,
-    /// Name of the file. Set by the `egui_web` backend.
+    /// Name of the file. Set by the `eframe` web backend.
     pub name: String,
-    /// Set by the `egui_web` backend.
+    /// Set by the `eframe` web backend.
     pub last_modified: Option<std::time::SystemTime>,
-    /// Set by the `egui_web` backend.
+    /// Set by the `eframe` web backend.
     pub bytes: Option<std::sync::Arc<[u8]>>,
 }
 
@@ -254,10 +254,14 @@ pub enum PointerButton {
     Secondary = 1,
     /// The tertiary mouse button is usually the middle mouse button (e.g. clicking the scroll wheel).
     Middle = 2,
+    /// The first extra mouse button on some mice. In web typically corresponds to the Browser back button.
+    Extra1 = 3,
+    /// The second extra mouse button on some mice. In web typically corresponds to the Browser forward button.
+    Extra2 = 4,
 }
 
 /// Number of pointer buttons supported by egui, i.e. the number of possible states of [`PointerButton`].
-pub const NUM_POINTER_BUTTONS: usize = 3;
+pub const NUM_POINTER_BUTTONS: usize = 5;
 
 /// State of the modifier keys. These must be fed to egui.
 ///
@@ -494,6 +498,28 @@ pub enum Key {
     X,
     Y,
     Z, // Used for cmd+Z (undo)
+
+    // The function keys:
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    F13,
+    F14,
+    F15,
+    F16,
+    F17,
+    F18,
+    F19,
+    F20,
 }
 
 impl RawInput {

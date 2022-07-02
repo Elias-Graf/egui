@@ -3,6 +3,10 @@
 //! The main type you want to use is [`EguiGlium`].
 //!
 //! If you are writing an app, you may want to look at [`eframe`](https://docs.rs/eframe) instead.
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -11,6 +15,7 @@ mod painter;
 pub use painter::Painter;
 
 pub use egui_winit;
+use egui_winit::winit::event_loop::EventLoopWindowTarget;
 
 // ----------------------------------------------------------------------------
 
@@ -25,14 +30,17 @@ pub struct EguiGlium {
 }
 
 impl EguiGlium {
-    pub fn new(display: &glium::Display) -> Self {
+    pub fn new<E>(display: &glium::Display, event_loop: &EventLoopWindowTarget<E>) -> Self {
         let painter = crate::Painter::new(display);
+
+        let mut egui_winit = egui_winit::State::new(event_loop);
+        egui_winit.set_max_texture_side(painter.max_texture_side());
+        let pixels_per_point = display.gl_window().window().scale_factor() as f32;
+        egui_winit.set_pixels_per_point(pixels_per_point);
+
         Self {
             egui_ctx: Default::default(),
-            egui_winit: egui_winit::State::new(
-                painter.max_texture_side(),
-                display.gl_window().window(),
-            ),
+            egui_winit,
             painter,
             shapes: Default::default(),
             textures_delta: Default::default(),
@@ -52,13 +60,17 @@ impl EguiGlium {
     /// Returns `true` if egui requests a repaint.
     ///
     /// Call [`Self::paint`] later to paint.
-    pub fn run(&mut self, display: &glium::Display, run_ui: impl FnMut(&egui::Context)) -> bool {
+    pub fn run(
+        &mut self,
+        display: &glium::Display,
+        run_ui: impl FnMut(&egui::Context),
+    ) -> std::time::Duration {
         let raw_input = self
             .egui_winit
             .take_egui_input(display.gl_window().window());
         let egui::FullOutput {
             platform_output,
-            needs_repaint,
+            repaint_after,
             textures_delta,
             shapes,
         } = self.egui_ctx.run(raw_input, run_ui);
@@ -72,7 +84,7 @@ impl EguiGlium {
         self.shapes = shapes;
         self.textures_delta.append(textures_delta);
 
-        needs_repaint
+        repaint_after
     }
 
     /// Paint the results of the last call to [`Self::run`].

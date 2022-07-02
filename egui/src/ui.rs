@@ -1037,7 +1037,7 @@ impl Ui {
     /// # });
     /// ```
     pub fn add_sized(&mut self, max_size: impl Into<Vec2>, widget: impl Widget) -> Response {
-        // TODO: configure to overflow to main_dir instead of centered overflow
+        // TODO(emilk): configure to overflow to main_dir instead of centered overflow
         // to handle the bug mentioned at https://github.com/emilk/egui/discussions/318#discussioncomment-627578
         // and fixed in https://github.com/emilk/egui/commit/035166276322b3f2324bd8b97ffcedc63fa8419f
         //
@@ -1251,7 +1251,7 @@ impl Ui {
         Label::new(text.into().strong()).ui(self)
     }
 
-    /// Show text that is waker (fainter color).
+    /// Show text that is weaker (fainter color).
     ///
     /// Shortcut for `ui.label(RichText::new(text).weak())`
     pub fn weak(&mut self, text: impl Into<RichText>) -> Response {
@@ -1368,9 +1368,25 @@ impl Ui {
     }
 
     /// Show a checkbox.
+    ///
+    /// See also [`Self::toggle_value`].
     #[inline]
     pub fn checkbox(&mut self, checked: &mut bool, text: impl Into<WidgetText>) -> Response {
         Checkbox::new(checked, text).ui(self)
+    }
+
+    /// Acts like a checkbox, but looks like a [`SelectableLabel`].
+    ///
+    /// Click to toggle to bool.
+    ///
+    /// See also [`Self::checkbox`].
+    pub fn toggle_value(&mut self, selected: &mut bool, text: impl Into<WidgetText>) -> Response {
+        let mut response = self.selectable_label(*selected, text);
+        if response.clicked() {
+            *selected = !*selected;
+            response.mark_changed();
+        }
+        response
     }
 
     /// Show a [`RadioButton`].
@@ -1416,7 +1432,7 @@ impl Ui {
 
     /// Show a label which can be selected or not.
     ///
-    /// See also [`SelectableLabel`].
+    /// See also [`SelectableLabel`] and [`Self::toggle_value`].
     #[must_use = "You should check if the user clicked this with `if ui.selectable_label(…).clicked() { … } "]
     pub fn selectable_label(&mut self, checked: bool, text: impl Into<WidgetText>) -> Response {
         SelectableLabel::new(checked, text).ui(self)
@@ -1427,7 +1443,7 @@ impl Ui {
     ///
     /// Example: `ui.selectable_value(&mut my_enum, Enum::Alternative, "Alternative")`.
     ///
-    /// See also [`SelectableLabel`].
+    /// See also [`SelectableLabel`] and [`Self::toggle_value`].
     pub fn selectable_value<Value: PartialEq>(
         &mut self,
         current_value: &mut Value,
@@ -1498,8 +1514,8 @@ impl Ui {
 
     /// Show an image here with the given size.
     ///
-    /// In order to display an image you must first acquire a [`TextureHandle`]
-    /// using [`Context::load_texture`].
+    /// In order to display an image you must first acquire a [`TextureHandle`].
+    /// This is best done with [`egui_extras::RetainedImage`](https://docs.rs/egui_extras/latest/egui_extras/image/struct.RetainedImage.html) or [`Context::load_texture`].
     ///
     /// ```
     /// struct MyImage {
@@ -1510,7 +1526,11 @@ impl Ui {
     ///     fn ui(&mut self, ui: &mut egui::Ui) {
     ///         let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
     ///             // Load the texture only once.
-    ///             ui.ctx().load_texture("my-image", egui::ColorImage::example())
+    ///             ui.ctx().load_texture(
+    ///                 "my-image",
+    ///                 egui::ColorImage::example(),
+    ///                 egui::TextureFilter::Linear
+    ///             )
     ///         });
     ///
     ///         // Show the image:
@@ -1705,7 +1725,7 @@ impl Ui {
     /// Create a child ui which is indented to the right.
     ///
     /// The `id_source` here be anything at all.
-    // TODO: remove `id_source` argument?
+    // TODO(emilk): remove `id_source` argument?
     #[inline]
     pub fn indent<R>(
         &mut self,
@@ -1932,7 +1952,7 @@ impl Ui {
     /// ```
     ///
     /// See also [`Self::allocate_ui_with_layout`],
-    /// and the helpers [`Self::horizontal]`, [`Self::vertical`], etc.
+    /// and the helpers [`Self::horizontal`], [`Self::vertical`], etc.
     #[inline]
     pub fn with_layout<R>(
         &mut self,
@@ -2021,7 +2041,7 @@ impl Ui {
         num_columns: usize,
         add_contents: Box<dyn FnOnce(&mut [Self]) -> R + 'c>,
     ) -> R {
-        // TODO: ensure there is space
+        // TODO(emilk): ensure there is space
         let spacing = self.spacing().item_spacing.x;
         let total_spacing = spacing * (num_columns as f32 - 1.0);
         let column_width = (self.available_width() - total_spacing) / (num_columns as f32);

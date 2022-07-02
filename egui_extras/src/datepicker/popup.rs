@@ -4,7 +4,7 @@ use chrono::{Date, Datelike, NaiveDate, Utc, Weekday};
 use egui::{Align, Button, Color32, ComboBox, Direction, Id, Layout, RichText, Ui, Vec2};
 
 #[derive(Default, Clone)]
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 struct DatePickerPopupState {
     year: i32,
     month: u32,
@@ -86,6 +86,9 @@ impl<'a> DatePickerPopup<'a> {
                                                 )
                                                 .changed()
                                             {
+                                                popup_state.day = popup_state
+                                                    .day
+                                                    .min(popup_state.last_day_of_month());
                                                 ui.memory()
                                                     .data
                                                     .insert_persisted(id, popup_state.clone());
@@ -106,6 +109,9 @@ impl<'a> DatePickerPopup<'a> {
                                                 )
                                                 .changed()
                                             {
+                                                popup_state.day = popup_state
+                                                    .day
+                                                    .min(popup_state.last_day_of_month());
                                                 ui.memory()
                                                     .data
                                                     .insert_persisted(id, popup_state.clone());
@@ -251,7 +257,7 @@ impl<'a> DatePickerPopup<'a> {
                                     });
                                 }
 
-                                //TODO: Locale
+                                //TODO(elwerene): Locale
                                 for name in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] {
                                     header.col(|ui| {
                                         ui.with_layout(

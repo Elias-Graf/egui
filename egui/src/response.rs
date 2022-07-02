@@ -34,40 +34,50 @@ pub struct Response {
 
     /// Was the widget enabled?
     /// If `false`, there was no interaction attempted (not even hover).
-    pub(crate) enabled: bool,
+    #[doc(hidden)]
+    pub enabled: bool,
 
     // OUT:
     /// The pointer is hovering above this widget or the widget was clicked/tapped this frame.
-    pub(crate) hovered: bool,
+    #[doc(hidden)]
+    pub hovered: bool,
 
     /// The pointer clicked this thing this frame.
-    pub(crate) clicked: [bool; NUM_POINTER_BUTTONS],
+    #[doc(hidden)]
+    pub clicked: [bool; NUM_POINTER_BUTTONS],
 
-    // TODO: `released` for sliders
+    // TODO(emilk): `released` for sliders
     /// The thing was double-clicked.
-    pub(crate) double_clicked: [bool; NUM_POINTER_BUTTONS],
+    #[doc(hidden)]
+    pub double_clicked: [bool; NUM_POINTER_BUTTONS],
 
     /// The thing was triple-clicked.
     pub(crate) triple_clicked: [bool; NUM_POINTER_BUTTONS],
 
     /// The widgets is being dragged
-    pub(crate) dragged: bool,
+    #[doc(hidden)]
+    pub dragged: bool,
 
     /// The widget was being dragged, but now it has been released.
-    pub(crate) drag_released: bool,
+    #[doc(hidden)]
+    pub drag_released: bool,
 
     /// Is the pointer button currently down on this widget?
     /// This is true if the pointer is pressing down or dragging a widget
-    pub(crate) is_pointer_button_down_on: bool,
+    #[doc(hidden)]
+    pub is_pointer_button_down_on: bool,
 
     /// Where the pointer (mouse/touch) were when when this widget was clicked or dragged.
     /// `None` if the widget is not being interacted with.
-    pub(crate) interact_pointer_pos: Option<Pos2>,
+    #[doc(hidden)]
+    pub interact_pointer_pos: Option<Pos2>,
 
     /// What the underlying data changed?
+    ///
     /// e.g. the slider was dragged, text was entered in a [`TextEdit`](crate::TextEdit) etc.
     /// Always `false` for something like a [`Button`](crate::Button).
-    pub(crate) changed: bool,
+    #[doc(hidden)]
+    pub changed: bool,
 }
 
 impl std::fmt::Debug for Response {
@@ -547,16 +557,22 @@ impl Response {
                 self.clicked[0] || other.clicked[0],
                 self.clicked[1] || other.clicked[1],
                 self.clicked[2] || other.clicked[2],
+                self.clicked[3] || other.clicked[3],
+                self.clicked[4] || other.clicked[4],
             ],
             double_clicked: [
                 self.double_clicked[0] || other.double_clicked[0],
                 self.double_clicked[1] || other.double_clicked[1],
                 self.double_clicked[2] || other.double_clicked[2],
+                self.double_clicked[3] || other.double_clicked[3],
+                self.double_clicked[4] || other.double_clicked[4],
             ],
             triple_clicked: [
                 self.triple_clicked[0] || other.triple_clicked[0],
                 self.triple_clicked[1] || other.triple_clicked[1],
                 self.triple_clicked[2] || other.triple_clicked[2],
+                self.triple_clicked[3] || other.triple_clicked[3],
+                self.triple_clicked[4] || other.triple_clicked[4],
             ],
             dragged: self.dragged || other.dragged,
             drag_released: self.drag_released || other.drag_released,

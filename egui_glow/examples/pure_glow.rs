@@ -1,4 +1,4 @@
-//! Example how to use pure `egui_glow` without [`epi`].
+//! Example how to use pure `egui_glow`.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(unsafe_code)]
@@ -8,15 +8,15 @@ fn main() {
 
     let event_loop = glutin::event_loop::EventLoop::with_user_event();
     let (gl_window, gl) = create_display(&event_loop);
-    let gl = std::rc::Rc::new(gl);
+    let gl = std::sync::Arc::new(gl);
 
-    let mut egui_glow = egui_glow::EguiGlow::new(gl_window.window(), gl.clone());
+    let mut egui_glow = egui_glow::EguiGlow::new(&event_loop, gl.clone());
 
     event_loop.run(move |event, _, control_flow| {
         let mut redraw = || {
             let mut quit = false;
 
-            let needs_repaint = egui_glow.run(gl_window.window(), |egui_ctx| {
+            let repaint_after = egui_glow.run(gl_window.window(), |egui_ctx| {
                 egui::SidePanel::left("my_side_panel").show(egui_ctx, |ui| {
                     ui.heading("Hello World!");
                     if ui.button("Quit").clicked() {
@@ -28,9 +28,13 @@ fn main() {
 
             *control_flow = if quit {
                 glutin::event_loop::ControlFlow::Exit
-            } else if needs_repaint {
+            } else if repaint_after.is_zero() {
                 gl_window.window().request_redraw();
                 glutin::event_loop::ControlFlow::Poll
+            } else if let Some(repaint_after_instant) =
+                std::time::Instant::now().checked_add(repaint_after)
+            {
+                glutin::event_loop::ControlFlow::WaitUntil(repaint_after_instant)
             } else {
                 glutin::event_loop::ControlFlow::Wait
             };
@@ -77,10 +81,15 @@ fn main() {
 
                 egui_glow.on_event(&event);
 
-                gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                gl_window.window().request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
             }
             glutin::event::Event::LoopDestroyed => {
                 egui_glow.destroy();
+            }
+            glutin::event::Event::NewEvents(glutin::event::StartCause::ResumeTimeReached {
+                ..
+            }) => {
+                gl_window.window().request_redraw();
             }
 
             _ => (),

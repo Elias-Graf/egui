@@ -31,6 +31,8 @@ Sections:
 * [Other](#other)
 * [Credits](#credits)
 
+([egui 的中文翻译文档 / chinese translation](https://github.com/Re-Ch-Love/egui-doc-cn/blob/main/README_zh-hans.md))
+
 ## Example
 
 ``` rust
@@ -58,7 +60,7 @@ If you have questions, use [GitHub Discussions](https://github.com/emilk/egui/di
 
 ## Demo
 
-[Click to run egui web demo](https://www.egui.rs/#demo) (works in any browser with WASM and WebGL support). Uses [`egui_web`](https://github.com/emilk/egui/tree/master/egui_web).
+[Click to run egui web demo](https://www.egui.rs/#demo) (works in any browser with WASM and WebGL support). Uses [`eframe`](https://github.com/emilk/egui/tree/master/eframe).
 
 To test the demo app locally, run `cargo run --release -p egui_demo_app`.
 
@@ -82,7 +84,7 @@ On Fedora Rawhide you need to run:
 * A simple 2D graphics API for custom painting ([`epaint`](https://docs.rs/epaint)).
 * No callbacks
 * Pure immediate mode
-* Extensible: [easy to write your own widgets for egui](https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/toggle_switch.rs)
+* Extensible: [easy to write your own widgets for egui](https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/toggle_switch.rs)
 * Modular: You should be able to use small parts of egui and combine them in new ways
 * Safe: there is no `unsafe` code in egui
 * Minimal dependencies: [`ab_glyph`](https://crates.io/crates/ab_glyph) [`ahash`](https://crates.io/crates/ahash) [`nohash-hasher`](https://crates.io/crates/nohash-hasher) [`parking_lot`](https://crates.io/crates/parking_lot)
@@ -112,7 +114,7 @@ The obvious alternative to egui is [`imgui-rs`](https://github.com/Gekkio/imgui-
 * egui is pure Rust
 * egui is easily compiled to WASM
 * egui lets you use native Rust string types (`imgui-rs` forces you to use annoying macros and wrappers for zero-terminated strings)
-* [Writing your own widgets in egui is simple](https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/toggle_switch.rs)
+* [Writing your own widgets in egui is simple](https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/toggle_switch.rs)
 
 egui also tries to improve your experience in other small ways:
 
@@ -160,14 +162,13 @@ An integration needs to do the following each frame:
 
 ### Official integrations
 
-If you're making an app, your best bet is using [`eframe`](https://github.com/emilk/egui/tree/master/eframe), the official egui framework. It lets you write apps that work on both the web and native. `eframe` is just a thin wrapper over `egui_web` and `egui_glow` (see below).
-
 These are the official egui integrations:
 
+* [`eframe`](https://github.com/emilk/egui/tree/master/eframe) for compiling the same app to web/wasm and desktop/native. Uses `egui_glow` and `egui-winit`.
 * [`egui_glium`](https://github.com/emilk/egui/tree/master/egui_glium) for compiling native apps with [Glium](https://github.com/glium/glium).
 * [`egui_glow`](https://github.com/emilk/egui/tree/master/egui_glow) for rendering egui with [glow](https://github.com/grovesNL/glow) on native and web, and for making native apps.
-* [`egui_web`](https://github.com/emilk/egui/tree/master/egui_web) for making a web app. Compiles to WASM, renders with WebGL. [Click to run the egui demo](https://www.egui.rs/#demo). Uses `egui_glow`.
-* [`egui-winit`](https://github.com/emilk/egui/tree/master/egui-winit) for integrating with [winit](https://github.com/rust-windowing/winit). `egui-winit` is used by `egui_glium` and `egui_glow`.
+* [`egui-wgpu`](https://github.com/emilk/egui/tree/master/egui-wgpu) for [wgpu](https://crates.io/crates/wgpu) (WebGPU API).
+* [`egui-winit`](https://github.com/emilk/egui/tree/master/egui-winit) for integrating with [winit](https://github.com/rust-windowing/winit).
 
 ### 3rd party integrations
 
@@ -176,7 +177,6 @@ These are the official egui integrations:
 * [`egui_glfw_gl`](https://github.com/cohaereo/egui_glfw_gl) for [GLFW](https://crates.io/crates/glfw).
 * [`egui_sdl2_gl`](https://crates.io/crates/egui_sdl2_gl) for [SDL2](https://crates.io/crates/sdl2).
 * [`egui_vulkano`](https://github.com/derivator/egui_vulkano) for [Vulkano](https://github.com/vulkano-rs/vulkano).
-* [`egui_wgpu_backend`](https://crates.io/crates/egui_wgpu_backend) for [wgpu](https://crates.io/crates/wgpu) (WebGPU API).
 * [`egui_winit_vulkano`](https://github.com/hakolao/egui_winit_vulkano) for [Vulkano](https://github.com/vulkano-rs/vulkano).
 * [`egui-macroquad`](https://github.com/optozorax/egui-macroquad) for [macroquad](https://github.com/not-fl3/macroquad).
 * [`egui-miniquad`](https://github.com/not-fl3/egui-miniquad) for [Miniquad](https://github.com/not-fl3/miniquad).
@@ -186,6 +186,8 @@ These are the official egui integrations:
 * [`ggez-egui`](https://github.com/NemuiSen/ggez-egui) for the [ggez](https://ggez.rs/) game framework.
 * [`godot-egui`](https://github.com/setzer22/godot-egui) for [godot-rust](https://github.com/godot-rust/godot-rust).
 * [`nannou_egui`](https://github.com/AlexEne/nannou_egui) for [nannou](https://nannou.cc).
+* [`notan_egui`](https://github.com/Nazariglez/notan/tree/main/crates/notan_egui) for [notan](https://github.com/Nazariglez/notan).
+* [`screen-13-egui`](https://github.com/attackgoat/screen-13/tree/master/contrib/screen-13-egui) for [Screen 13](https://github.com/attackgoat/screen-13).
 * [`smithay-egui`](https://github.com/Smithay/smithay-egui) for [smithay](https://github.com/Smithay/smithay/).
 
 Missing an integration for the thing you're working on? Create one, it's easy!
@@ -217,7 +219,7 @@ loop {
 }
 ```
 
-For a reference OpenGL backend, see [the `egui_glium` painter](https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs), [the `egui_glow` painter](https://github.com/emilk/egui/blob/master/egui_glow/src/painter.rs), or [the `egui_web` `WebGL` painter](https://github.com/emilk/egui/blob/master/egui_web/src/webgl2.rs).
+For a reference OpenGL backend, see [the `egui_glium` painter](https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs) or [the `egui_glow` painter](https://github.com/emilk/egui/blob/master/egui_glow/src/painter.rs).
 
 ### Debugging your integration
 
@@ -309,7 +311,7 @@ Here is an example (from https://github.com/AlexxxRu/TinyPomodoro):
 <img src="media/pompodoro-skin.png" width="50%">
 
 ### How do I use egui with `async`?
-If you call `.await` in your GUI code, the UI will freeze, with is very bad UX. Instead, keep the GUI thread non-blocking and communicate with any concurrent tasks (`async` tasks or other threads) with something like:
+If you call `.await` in your GUI code, the UI will freeze, which is very bad UX. Instead, keep the GUI thread non-blocking and communicate with any concurrent tasks (`async` tasks or other threads) with something like:
 * Channels (e.g. [`std::sync::mpsc::channel`](https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html)). Make sure to use [`try_recv`](https://doc.rust-lang.org/std/sync/mpsc/struct.Receiver.html#method.try_recv) so you don't block the gui thread!
 * `Arc<Mutex<Value>>` (background thread sets a value; GUI thread reads it)
 * [`poll_promise::Promise`](https://docs.rs/poll-promise) (example: [`examples/download_image/`](https://github.com/emilk/egui/blob/master/examples/download_image/))
@@ -385,7 +387,7 @@ Notable contributions by:
 * [@optozorax](https://github.com/optozorax): [Arbitrary widget data storage](https://github.com/emilk/egui/pull/257).
 * [@quadruple-output](https://github.com/quadruple-output): [Multitouch](https://github.com/emilk/egui/pull/306).
 * [@EmbersArc](https://github.com/EmbersArc): [Plots](https://github.com/emilk/egui/pulls?q=+is%3Apr+author%3AEmbersArc).
-* [@AsmPrgmC3](https://github.com/AsmPrgmC3): [Proper sRGBA blending in `egui_web`](https://github.com/emilk/egui/pull/650).
+* [@AsmPrgmC3](https://github.com/AsmPrgmC3): [Proper sRGBA blending for web](https://github.com/emilk/egui/pull/650).
 * [@AlexApps99](https://github.com/AlexApps99): [`egui_glow`](https://github.com/emilk/egui/pull/685).
 * [@mankinskin](https://github.com/mankinskin): [Context menus](https://github.com/emilk/egui/pull/543).
 * [@t18b219k](https://github.com/t18b219k): [Port glow painter to web](https://github.com/emilk/egui/pull/868).

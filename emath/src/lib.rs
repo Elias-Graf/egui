@@ -14,6 +14,10 @@
 //!
 //! For that, use something else ([`glam`](https://docs.rs/glam), [`nalgebra`](https://docs.rs/nalgebra), …)
 //! and enable the `mint` feature flag in `emath` to enable implicit conversion to/from `emath`.
+//!
+//! ## Feature flags
+#![cfg_attr(feature = "document-features", doc = document_features::document_features!())]
+//!
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -145,7 +149,7 @@ pub fn format_with_decimals_in_range(value: f64, decimal_range: RangeInclusive<u
     let min_decimals = min_decimals.min(max_decimals);
 
     if min_decimals != max_decimals {
-        // Ugly/slow way of doing this. TODO: clean up precision.
+        // Ugly/slow way of doing this. TODO(emilk): clean up precision.
         for decimals in min_decimals..max_decimals {
             let text = format!("{:.*}", decimals, value);
             let epsilon = 16.0 * f32::EPSILON; // margin large enough to handle most peoples round-tripping needs
@@ -255,9 +259,20 @@ macro_rules! impl_num_ext {
     };
 }
 
+impl_num_ext!(u8);
+impl_num_ext!(u16);
+impl_num_ext!(u32);
+impl_num_ext!(u64);
+impl_num_ext!(u128);
+impl_num_ext!(usize);
+impl_num_ext!(i8);
+impl_num_ext!(i16);
+impl_num_ext!(i32);
+impl_num_ext!(i64);
+impl_num_ext!(i128);
+impl_num_ext!(isize);
 impl_num_ext!(f32);
 impl_num_ext!(f64);
-impl_num_ext!(usize);
 impl_num_ext!(Vec2);
 impl_num_ext!(Pos2);
 

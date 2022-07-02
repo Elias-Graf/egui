@@ -22,7 +22,7 @@ pub struct FontId {
 
     /// What font family to use.
     pub family: FontFamily,
-    // TODO: weight (bold), italics, …
+    // TODO(emilk): weight (bold), italics, …
 }
 
 impl Default for FontId {
@@ -240,73 +240,86 @@ pub struct FontDefinitions {
     /// When looking for a character glyph `epaint` will start with
     /// the first font and then move to the second, and so on.
     /// So the first font is the primary, and then comes a list of fallbacks in order of priority.
-    // TODO: per font size-modifier.
     pub families: BTreeMap<FontFamily, Vec<String>>,
 }
 
 impl Default for FontDefinitions {
+    /// Specifies the default fonts if the feature `default_fonts` is enabled,
+    /// otherwise this is the same as [`Self::empty`].
+    #[cfg(not(feature = "default_fonts"))]
     fn default() -> Self {
-        #[allow(unused)]
+        Self::empty()
+    }
+
+    /// Specifies the default fonts if the feature `default_fonts` is enabled,
+    /// otherwise this is the same as [`Self::empty`].
+    #[cfg(feature = "default_fonts")]
+    fn default() -> Self {
         let mut font_data: BTreeMap<String, FontData> = BTreeMap::new();
 
         let mut families = BTreeMap::new();
 
-        #[cfg(feature = "default_fonts")]
-        {
-            font_data.insert(
+        font_data.insert(
+            "Hack".to_owned(),
+            FontData::from_static(include_bytes!("../../fonts/Hack-Regular.ttf")),
+        );
+        font_data.insert(
+            "Ubuntu-Light".to_owned(),
+            FontData::from_static(include_bytes!("../../fonts/Ubuntu-Light.ttf")),
+        );
+
+        // Some good looking emojis. Use as first priority:
+        font_data.insert(
+            "NotoEmoji-Regular".to_owned(),
+            FontData::from_static(include_bytes!("../../fonts/NotoEmoji-Regular.ttf")),
+        );
+
+        // Bigger emojis, and more. <http://jslegers.github.io/emoji-icon-font/>:
+        font_data.insert(
+            "emoji-icon-font".to_owned(),
+            FontData::from_static(include_bytes!("../../fonts/emoji-icon-font.ttf")).tweak(
+                FontTweak {
+                    scale: 0.8,            // make it smaller
+                    y_offset_factor: 0.07, // move it down slightly
+                    y_offset: 0.0,
+                },
+            ),
+        );
+
+        families.insert(
+            FontFamily::Monospace,
+            vec![
                 "Hack".to_owned(),
-                FontData::from_static(include_bytes!("../../fonts/Hack-Regular.ttf")),
-            );
-            font_data.insert(
-                "Ubuntu-Light".to_owned(),
-                FontData::from_static(include_bytes!("../../fonts/Ubuntu-Light.ttf")),
-            );
-
-            // Some good looking emojis. Use as first priority:
-            font_data.insert(
+                "Ubuntu-Light".to_owned(), // fallback for √ etc
                 "NotoEmoji-Regular".to_owned(),
-                FontData::from_static(include_bytes!("../../fonts/NotoEmoji-Regular.ttf")),
-            );
-
-            // Bigger emojis, and more. <http://jslegers.github.io/emoji-icon-font/>:
-            font_data.insert(
                 "emoji-icon-font".to_owned(),
-                FontData::from_static(include_bytes!("../../fonts/emoji-icon-font.ttf")).tweak(
-                    FontTweak {
-                        scale: 0.8,            // make it smaller
-                        y_offset_factor: 0.07, // move it down slightly
-                        y_offset: 0.0,
-                    },
-                ),
-            );
-
-            families.insert(
-                FontFamily::Monospace,
-                vec![
-                    "Hack".to_owned(),
-                    "Ubuntu-Light".to_owned(), // fallback for √ etc
-                    "NotoEmoji-Regular".to_owned(),
-                    "emoji-icon-font".to_owned(),
-                ],
-            );
-            families.insert(
-                FontFamily::Proportional,
-                vec![
-                    "Ubuntu-Light".to_owned(),
-                    "NotoEmoji-Regular".to_owned(),
-                    "emoji-icon-font".to_owned(),
-                ],
-            );
-        }
-
-        #[cfg(not(feature = "default_fonts"))]
-        {
-            families.insert(FontFamily::Monospace, vec![]);
-            families.insert(FontFamily::Proportional, vec![]);
-        }
+            ],
+        );
+        families.insert(
+            FontFamily::Proportional,
+            vec![
+                "Ubuntu-Light".to_owned(),
+                "NotoEmoji-Regular".to_owned(),
+                "emoji-icon-font".to_owned(),
+            ],
+        );
 
         Self {
             font_data,
+            families,
+        }
+    }
+}
+
+impl FontDefinitions {
+    /// No fonts.
+    pub fn empty() -> Self {
+        let mut families = BTreeMap::new();
+        families.insert(FontFamily::Monospace, vec![]);
+        families.insert(FontFamily::Proportional, vec![]);
+
+        Self {
+            font_data: Default::default(),
             families,
         }
     }
@@ -392,6 +405,12 @@ impl Fonts {
     #[inline]
     pub fn max_texture_side(&self) -> usize {
         self.lock().fonts.max_texture_side
+    }
+
+    /// The font atlas.
+    /// Pass this to [`crate::Tessellator`].
+    pub fn texture_atlas(&self) -> Arc<Mutex<TextureAtlas>> {
+        self.lock().fonts.atlas.clone()
     }
 
     /// Current size of the font image.
@@ -535,14 +554,7 @@ impl FontsImpl {
 
         let texture_width = max_texture_side.at_most(8 * 1024);
         let initial_height = 64;
-        let mut atlas = TextureAtlas::new([texture_width, initial_height]);
-
-        {
-            // Make the top left pixel fully white:
-            let (pos, image) = atlas.allocate((1, 1));
-            assert_eq!(pos, (0, 0));
-            image[pos] = 1.0;
-        }
+        let atlas = TextureAtlas::new([texture_width, initial_height]);
 
         let atlas = Arc::new(Mutex::new(atlas));
 
@@ -619,7 +631,7 @@ struct GalleyCache {
 
 impl GalleyCache {
     fn layout(&mut self, fonts: &mut FontsImpl, job: LayoutJob) -> Arc<Galley> {
-        let hash = crate::util::hash(&job); // TODO: even faster hasher?
+        let hash = crate::util::hash(&job); // TODO(emilk): even faster hasher?
 
         match self.cache.entry(hash) {
             std::collections::hash_map::Entry::Occupied(entry) => {
