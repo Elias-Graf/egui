@@ -1,6 +1,6 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, ops::ControlFlow, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
-use egui::{Color32, ColorImage, TextureFilter, TextureId};
+use egui::{ColorImage, TextureFilter, TextureId};
 
 use crate::dynamic_texture_manager::TextureSize;
 
@@ -43,7 +43,7 @@ pub struct DynTextMan {
     internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
     /// TODO: Would be better as a constant, but has to be obtained through the
     /// [`egui::epaint::textures::TextureManager`].
-    placeholder_text_id: TextureId,
+    // placeholder_text_id: TextureId,
     text_id_cache: HashMap<(String, TextSize), TextureId>,
 }
 
@@ -68,15 +68,19 @@ impl DynTextMan {
             return text_id.clone();
         }
 
-        let file_ext = match self.try_get_file_ext(url) {
-            ControlFlow::Continue(file_ext) => file_ext,
-            ControlFlow::Break(text_id) => return text_id,
-        };
+        // let file_ext = match self.try_get_file_ext(url) {
+        //     ControlFlow::Continue(file_ext) => file_ext,
+        //     ControlFlow::Break(text_id) => return text_id,
+        // };
 
-        let bytes = match self.bytes_loader.load(file_ext) {
+        let bytes = match self.bytes_loader.load(url) {
             bytes_loader::LoaderResult::Again => todo!(),
             bytes_loader::LoaderResult::Bytes(bytes) => bytes,
-            bytes_loader::LoaderResult::Err(_) => todo!(),
+            bytes_loader::LoaderResult::Err(err) => {
+                eprintln!("{}", err);
+                // TODO: figure out how the log_err macro works
+                todo!("figure out how the log_err macro works");
+            }
         };
 
         let text = self.bytes_parser.parse(&bytes, size);
@@ -93,34 +97,34 @@ impl DynTextMan {
         bytes_loader: Box<dyn BytesLoader>,
         bytes_parser: Box<dyn BytesParser>,
     ) -> Self {
-        let placeholder_text_id = Self::alloc_in(
-            internal_text_man.clone(),
-            "<temporary texture>".to_owned(),
-            ColorImage::new([1, 1], Color32::TRANSPARENT),
-        );
+        // let placeholder_text_id = Self::alloc_in(
+        //     internal_text_man.clone(),
+        //     "<temporary texture>".to_owned(),
+        //     ColorImage::new([1, 1], Color32::TRANSPARENT),
+        // );
 
         Self {
             bytes_loader,
             bytes_parser,
             internal_text_man,
-            placeholder_text_id,
+            // placeholder_text_id,
             text_id_cache: HashMap::new(),
         }
     }
 
-    fn try_get_file_ext<'a>(&self, url: &'a str) -> ControlFlow<TextureId, &'a str> {
-        if let Some(ext) = std::path::Path::new(url).extension() {
-            return ControlFlow::Continue(ext.to_str().unwrap());
-        }
+    // fn try_get_file_ext<'a>(&self, url: &'a str) -> ControlFlow<TextureId, &'a str> {
+    //     if let Some(ext) = std::path::Path::new(url).extension() {
+    //         return ControlFlow::Continue(ext.to_str().unwrap());
+    //     }
 
-        tracing::error!(
-            "texture url {} is missing extension, using placeholder texture",
-            url
-        );
+    //     tracing::error!(
+    //         "texture url {} is missing extension, using placeholder texture",
+    //         url
+    //     );
 
-        // TODO: Test this
-        return ControlFlow::Break(self.placeholder_text_id);
-    }
+    //     // TODO: Test this
+    //     return ControlFlow::Break(self.placeholder_text_id);
+    // }
 
     pub fn unload(&mut self, url: &str, size: &TextSize) {
         self.text_id_cache

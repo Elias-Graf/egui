@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs,
-    sync::{Arc, Mutex},
-};
+use std::fs;
 
 pub enum LoaderResult {
     /// Try loading again.
@@ -20,7 +16,10 @@ pub trait BytesLoader {
     fn load(&self, url: &str) -> LoaderResult;
 }
 
-impl BytesLoader for fn(url: &str) -> LoaderResult {
+impl<T> BytesLoader for T
+where
+    T: Fn(&str) -> LoaderResult,
+{
     fn load(&self, url: &str) -> LoaderResult {
         self(url)
     }
@@ -30,36 +29,44 @@ impl BytesLoader for fn(url: &str) -> LoaderResult {
 pub fn fs_bytes_loader(url: &str) -> LoaderResult {
     match fs::read(url) {
         Ok(bytes) => LoaderResult::Bytes(bytes),
-        Err(err) => LoaderResult::Err(format!("{}", err)),
+        Err(err) => LoaderResult::Err(format!("failed to load [{}]: '{}'", url, err)),
     }
 }
 
-/// Loads the requested URL using []
 #[cfg(feature = "http")]
-#[derive(Default)]
-pub struct HttpBytesLoader {
-    responses: Arc<Mutex<HashMap<String, ehttp::Response>>>,
-}
+use http::*;
+#[cfg(feature = "http")]
+mod http {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
 
-#[cfg(feature = "http")]
-impl BytesLoader for HttpBytesLoader {
-    fn load(&self, url: &str) -> LoaderResult {
-        if let Some(result) = self.responses.lock().unwrap().remove(url) {
-            if !result.ok {
-                return LoaderResult::Err(result.status_text);
+    /// Loads the requested URL using []
+    #[derive(Default)]
+    pub struct HttpBytesLoader {
+        responses: Arc<Mutex<HashMap<String, ehttp::Response>>>,
+    }
+
+    impl BytesLoader for HttpBytesLoader {
+        fn load(&self, url: &str) -> LoaderResult {
+            if let Some(result) = self.responses.lock().unwrap().remove(url) {
+                if !result.ok {
+                    return LoaderResult::Err(result.status_text);
+                }
+
+                return LoaderResult::Bytes(result.bytes);
             }
 
-            return LoaderResult::Bytes(result.bytes);
+            let request = ehttp::Request::get(url);
+            let responses = self.responses.clone();
+            let url = url.to_owned();
+
+            ehttp::fetch(request, move |result| {
+                responses.lock().unwrap().insert(url, result.unwrap());
+            });
+
+            return LoaderResult::Again;
         }
-
-        let request = ehttp::Request::get(url);
-        let responses = self.responses.clone();
-        let url = url.to_owned();
-
-        ehttp::fetch(request, move |result| {
-            responses.lock().unwrap().insert(url, result.unwrap());
-        });
-
-        return LoaderResult::Again;
     }
 }

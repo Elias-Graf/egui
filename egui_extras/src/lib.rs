@@ -18,7 +18,8 @@ mod layout;
 mod sizing;
 mod strip;
 mod table;
-mod text_man;
+
+pub mod text_man;
 
 #[cfg(feature = "chrono")]
 pub use crate::datepicker::DatePickerButton;
