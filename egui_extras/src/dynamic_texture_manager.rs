@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use egui::{epaint, Color32, ColorImage, TextureId};
+use egui::{epaint, Color32, ColorImage, TextureFilter, TextureId};
 
 pub mod bytes_loader;
 
@@ -54,6 +54,7 @@ impl DynamicTextureManager {
         let placeholder_tex_id = tex_manager.write().alloc(
             "<temporary texture>".to_owned(),
             ColorImage::new([1, 1], Color32::TRANSPARENT).into(),
+            TextureFilter::Nearest,
         );
 
         let mut bytes_parsers = HashMap::new();
@@ -154,7 +155,10 @@ impl DynamicTextureManager {
             },
         };
 
-        let texture_id = self.tex_manager.write().alloc(url.to_owned(), image.into());
+        let texture_id =
+            self.tex_manager
+                .write()
+                .alloc(url.to_owned(), image.into(), TextureFilter::Nearest);
 
         self.tex_id_cache
             .insert((url.to_owned(), *size_or_zero), texture_id.clone());
