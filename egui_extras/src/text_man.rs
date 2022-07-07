@@ -8,6 +8,7 @@ use self::{bytes_loader::BytesLoader, bytes_parser::BytesParser};
 
 pub mod bytes_loader;
 pub mod bytes_parser;
+pub mod debug_widget;
 
 // TODO: Convert to Vec2?
 // Sadly it's quite hard to work with them, as they are based on f32, and floats
@@ -142,6 +143,28 @@ impl TextMan for DynTextMan {
 
     fn unload_sized(&mut self, url: &str, size: &TextureSize) {
         DynTextMan::unload(self, url, size)
+    }
+}
+
+/// Interface for displaying debug information about a texture manager.
+///
+/// # Panics
+/// All of the methods have default implementations that panic. Depending on the
+/// implementation, many of the methods may not be applicable.
+///
+/// **This trait is only supposed to be used for debugging purposes**.
+pub trait DbgTextMan {
+    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &TextureId)> {
+        panic!(
+            "this texture manager does not cache any textures,\
+        or it failed to implement this method"
+        );
+    }
+}
+
+impl DbgTextMan for DynTextMan {
+    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &TextureId)> {
+        self.text_id_cache.iter().collect()
     }
 }
 
