@@ -9,6 +9,9 @@ use self::{bytes_loader::BytesLoader, bytes_parser::BytesParser};
 pub mod bytes_loader;
 pub mod bytes_parser;
 
+// TODO: Convert to Vec2?
+// Sadly it's quite hard to work with them, as they are based on f32, and floats
+// are not easily hashed in rust. Hashing is necessary for the HashMaps.
 pub type TextSize = (usize, usize);
 
 pub trait TextMan {
