@@ -21,16 +21,21 @@ impl Widget for TextManDebugWidget {
             let mut total_bytes_used = 0;
 
             ui.collapsing("Allocated textures", |ui| {
-                ScrollArea::new([false, true]).show(ui, |ui| {
-                    for ((url, text_size), text_id) in
-                        self.text_man.read().unwrap().cached_text_ids()
-                    {
-                        let text_bytes_used = get_bytes_used(low_lvl_text_man, text_id.clone());
-                        total_bytes_used += text_bytes_used;
+                ScrollArea::new([false, true])
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for ((url, text_size), (hit_count, text_id)) in
+                            self.text_man.read().unwrap().cached_text_ids()
+                        {
+                            let text_bytes_used = get_bytes_used(low_lvl_text_man, text_id.clone());
+                            total_bytes_used += text_bytes_used;
 
-                        ui.label(format!("{} {:?} {} bytes", url, text_size, text_bytes_used));
-                    }
-                });
+                            ui.label(format!(
+                                "{} {:?} used: {} allocated (bytes): {} bytes",
+                                url, text_size, hit_count, text_bytes_used
+                            ));
+                        }
+                    });
             });
             ui.label(format!("total allocated bytes {}", total_bytes_used));
         });

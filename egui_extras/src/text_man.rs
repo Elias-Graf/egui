@@ -48,7 +48,7 @@ pub struct DynTextMan {
     /// TODO: Would be better as a constant, but has to be obtained through the
     /// [`egui::epaint::textures::TextureManager`].
     // placeholder_text_id: TextureId,
-    text_id_cache: HashMap<(String, TextSize), TextureId>,
+    text_id_cache: HashMap<(String, TextSize), (usize, TextureId)>,
 }
 
 impl DynTextMan {
@@ -68,9 +68,17 @@ impl DynTextMan {
     }
 
     pub fn load(&mut self, url: &str, size: &TextSize) -> TextureId {
-        if let Some(text_id) = self.text_id_cache.get(&(url, size) as &dyn TextIdCacheKey) {
+        if let Some((hit_count, text_id)) = self
+            .text_id_cache
+            .get_mut(&(url, size) as &dyn TextIdCacheKey)
+        {
+            *hit_count += 1;
             return text_id.clone();
         }
+
+        // if let Some((_, text_id)) = self.text_id_cache.get(&(url, size) as &dyn TextIdCacheKey) {
+        //     return text_id.clone();
+        // }
 
         // let file_ext = match self.try_get_file_ext(url) {
         //     ControlFlow::Continue(file_ext) => file_ext,
@@ -91,7 +99,7 @@ impl DynTextMan {
         let texture_id = self.alloc(url.to_string(), text);
 
         self.text_id_cache
-            .insert((url.to_string(), size.clone()), texture_id.clone());
+            .insert((url.to_owned(), *size), (0, texture_id.clone()));
 
         texture_id
     }
@@ -154,7 +162,7 @@ impl TextMan for DynTextMan {
 ///
 /// **This trait is only supposed to be used for debugging purposes**.
 pub trait DbgTextMan {
-    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &TextureId)> {
+    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &(usize, TextureId))> {
         panic!(
             "this texture manager does not cache any textures,\
         or it failed to implement this method"
@@ -163,7 +171,7 @@ pub trait DbgTextMan {
 }
 
 impl DbgTextMan for DynTextMan {
-    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &TextureId)> {
+    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &(usize, TextureId))> {
         self.text_id_cache.iter().collect()
     }
 }
