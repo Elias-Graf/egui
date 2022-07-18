@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use egui::TextureId;
 
 use crate::dynamic_texture_manager::TextureSize;
@@ -38,6 +40,16 @@ pub trait TextMan {
     fn unload_sized(&mut self, url: &str, size: &TextureSize);
 }
 
+/// # Panics
+/// That the texture manager either has no caching, or failed to implement the method.
+macro_rules! not_caching_or_not_implemented {
+    () => {
+        panic!(
+            "this texture manager does not cache any textures, or failed to implement this method"
+        )
+    };
+}
+
 /// Interface for displaying debug information about a texture manager.
 ///
 /// # Panics
@@ -46,10 +58,15 @@ pub trait TextMan {
 ///
 /// **This trait is only supposed to be used for debugging purposes**.
 pub trait DbgTextMan {
-    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &(usize, TextureId))> {
-        panic!(
-            "this texture manager does not cache any textures,\
-        or it failed to implement this method"
-        );
+    fn cached_text_ids(&self) -> Vec<(&(String, TextSize), &CachedTexture)> {
+        not_caching_or_not_implemented!()
     }
+    fn cached_text_id_size(&self) -> usize {
+        not_caching_or_not_implemented!()
+    }
+}
+
+pub struct CachedTexture {
+    pub last_used: SystemTime,
+    pub text_id: TextureId,
 }

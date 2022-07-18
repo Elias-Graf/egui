@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    sync::{Arc, RwLock},
+    time::{Duration, SystemTime},
+};
 
 use egui::{vec2, ScrollArea, Sense, TextureId, Widget, Window};
 
@@ -18,26 +21,35 @@ impl Widget for TextManDebugWidget {
         let low_lvl_text_man = &low_lvl_text_man.read();
 
         Window::new("TextManDebugWidget").show(ui.ctx(), |ui| {
-            let mut total_bytes_used = 0;
+            let dbg_text_man = self.text_man.read().unwrap();
 
             ui.collapsing("Allocated textures", |ui| {
                 ScrollArea::new([false, true])
-                    .max_height(300.0)
+                    .auto_shrink([false, false])
+                    .max_height(ui.available_height() - 100.0)
                     .show(ui, |ui| {
-                        for ((url, text_size), (hit_count, text_id)) in
-                            self.text_man.read().unwrap().cached_text_ids()
-                        {
-                            let text_bytes_used = get_bytes_used(low_lvl_text_man, text_id.clone());
-                            total_bytes_used += text_bytes_used;
+                        for ((url, text_size), text) in dbg_text_man.cached_text_ids() {
+                            let text_bytes_used =
+                                get_bytes_used(low_lvl_text_man, text.text_id.clone());
+                            let access_delta = SystemTime::now()
+                                .duration_since(text.last_used)
+                                .unwrap_or(Duration::default());
 
                             ui.label(format!(
-                                "{} {:?} used: {} allocated (bytes): {} bytes",
-                                url, text_size, hit_count, text_bytes_used
+                                "{}, last accessed: {:#?}, size: {:?} allocated (bytes): {} bytes",
+                                url, access_delta, text_size, text_bytes_used
                             ));
                         }
                     });
             });
-            ui.label(format!("total allocated bytes {}", total_bytes_used));
+
+            ui.label(format!(
+                "total allocated bytes {}",
+                dbg_text_man.cached_text_id_size()
+            ));
+            if ui.button("📋").on_hover_text("Click to copy").clicked() {
+                ui.output().copied_text = dbg_text_man.cached_text_id_size().to_string();
+            }
         });
 
         // TODO: Figure out a better solution than this
