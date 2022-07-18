@@ -17,9 +17,41 @@ where
     }
 }
 
-#[cfg(feature = "svg")]
+/// Loads the png using the [`image`] library.
+///
+/// Note that this parser ignores the passed size, as a png already has a fixed
+/// one.
+#[cfg(all(feature = "image", feature = "png"))]
+pub fn png_bytes_parser(bytes: &[u8], _: &TextSize) -> ColorImage {
+    // TODO: Remove unwrap (the parser should return a result in the future anyway)
+    image_create_parser(image::codecs::png::PngDecoder::new(bytes).unwrap())
+}
+
+/// Loads the jpg using the [`image`] library.
+///
+/// Note that this parser ignores the passed size, as a png already has a fixed
+/// one.
+#[cfg(all(feature = "image", feature = "jpeg"))]
+pub fn jpg_bytes_parser(bytes: &[u8], _: &TextSize) -> ColorImage {
+    // TODO: Remove unwrap (the parser should return a result in the future anyway)
+    image_create_parser(image::codecs::jpeg::JpegDecoder::new(bytes).unwrap())
+}
+
+#[cfg(feature = "image")]
+#[cfg(any(feature = "png", feature = "jpg"))]
+fn image_create_parser<'a, D: image::ImageDecoder<'a>>(decoder: D) -> ColorImage {
+    // TODO: Remove unwrap (the parser should return a result in the future anyway);
+    let dyn_img = image::DynamicImage::from_decoder(decoder).unwrap();
+    let size = [dyn_img.width() as _, dyn_img.height() as _];
+    let img_buff = dyn_img.to_rgba8();
+    let flat_buff = img_buff.as_flat_samples();
+
+    egui::ColorImage::from_rgba_unmultiplied(size, flat_buff.as_slice())
+}
+
 pub fn svg_bytes_parser(bytes: &[u8], size: &TextSize) -> ColorImage {
     let options = usvg::Options::default();
+    // TODO: remove unwrap (the parser should return a result in the future)
     let tree = usvg::Tree::from_data(&bytes, &options.to_ref()).unwrap();
     let (width, height) = *size;
 

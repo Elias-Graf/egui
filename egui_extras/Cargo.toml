@@ -41,6 +41,15 @@ tracing = ["dep:tracing", "egui/tracing"]
 ## Enable http support
 http = ["dep:ehttp"]
 
+## Enable image feature
+image = ["dep:image"]
+
+## Enable jpeg parsing
+jpeg = ["image/jpeg"]
+
+## Enable png parsing
+png = ["image/png"]
+
 [dependencies]
 egui = { version = "0.18.0", path = "../egui", default-features = false }
 
