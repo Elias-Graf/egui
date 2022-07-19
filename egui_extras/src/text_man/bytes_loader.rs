@@ -1,4 +1,4 @@
-use std::fs;
+use std::{error::Error, fmt::Display, fs};
 
 pub enum LoaderResult {
     /// Try loading again.
@@ -9,7 +9,7 @@ pub enum LoaderResult {
     /// The resource loaded.
     Bytes(Vec<u8>),
     /// An error occurred trying to load the specified resource.
-    Err(String),
+    Err(BytesLoaderErr),
 }
 
 pub trait BytesLoader {
@@ -29,7 +29,10 @@ where
 pub fn fs_bytes_loader(url: &str) -> LoaderResult {
     match fs::read(url) {
         Ok(bytes) => LoaderResult::Bytes(bytes),
-        Err(err) => LoaderResult::Err(format!("failed to load [{}]: '{}'", url, err)),
+        Err(err) => LoaderResult::Err(match err.kind() {
+            std::io::ErrorKind::NotFound => BytesLoaderErr::NotFound,
+            _ => BytesLoaderErr::Unknown(format!("{}", err)),
+        }),
     }
 }
 
@@ -67,6 +70,23 @@ mod http {
             });
 
             return LoaderResult::Again;
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum BytesLoaderErr {
+    NotFound,
+    Unknown(String),
+}
+
+impl Error for BytesLoaderErr {}
+
+impl Display for BytesLoaderErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BytesLoaderErr::NotFound => f.write_str("not found"),
+            BytesLoaderErr::Unknown(msg) => write!(f, "unknown error: {}", msg),
         }
     }
 }

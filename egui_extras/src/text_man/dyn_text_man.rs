@@ -1,8 +1,22 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc, time::SystemTime};
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    error::Error,
+    fmt::{Debug, Display},
+    hash::Hash,
+    sync::Arc,
+    time::SystemTime,
+};
 
-use egui::{ColorImage, TextureFilter, TextureId};
+use egui::{Color32, ColorImage, TextureFilter, TextureId};
 
-use super::{bytes_loader, bytes_parser, CachedTexture, DbgTextMan, TextMan, TextSize};
+use crate::log_err;
+
+use super::{
+    bytes_loader::{self, BytesLoaderErr},
+    bytes_parser::{self, BytesParserErr},
+    CachedTexture, DbgTextMan, TextMan, TextSize,
+};
 
 pub struct DynTextMan {
     bytes_loader: Box<dyn bytes_loader::BytesLoader>,
@@ -10,7 +24,7 @@ pub struct DynTextMan {
     internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
     /// TODO: Would be better as a constant, but has to be obtained through the
     /// [`egui::epaint::textures::TextureManager`].
-    // placeholder_text_id: TextureId,
+    placeholder_text_id: TextureId,
     text_id_cache: HashMap<(String, TextSize), CachedTexture>,
     /// Size of the text id cache in bytes.
     text_id_cache_size: usize,
@@ -33,75 +47,11 @@ impl DynTextMan {
             .alloc(name, text.into(), TextureFilter::Nearest)
     }
 
-    pub fn load(&mut self, url: &str, size: &TextSize) -> Result<TextureId, &'static str> {
-        if let Some(CachedTexture { last_used, text_id }) = self
-            .text_id_cache
-            .get_mut(&(url, size) as &dyn TextIdCacheKey)
-        {
-            *last_used = SystemTime::now();
-
-            return Ok(text_id.clone());
-        }
-
-        // let file_ext = match self.try_get_file_ext(url) {
-        //     ControlFlow::Continue(file_ext) => file_ext,
-        //     ControlFlow::Break(text_id) => return text_id,
-        // };
-
-        let bytes = match self.bytes_loader.load(url) {
-            bytes_loader::LoaderResult::Again => todo!(),
-            bytes_loader::LoaderResult::Bytes(bytes) => bytes,
-            bytes_loader::LoaderResult::Err(err) => {
-                eprintln!("{}", err);
-                // TODO: figure out how the log_err macro works
-                todo!("figure out how the log_err macro works");
-            }
-        };
-
-        let text = self.bytes_parser.parse(&bytes, size);
-        let text_id = self.alloc(url.to_string(), text);
-        let text_id_size = byte_size_of_text_id(text_id, &self.internal_text_man.read())?;
-
-        self.text_id_cache_size += text_id_size;
-        self.text_id_cache.insert(
-            (url.to_owned(), *size),
-            CachedTexture {
-                last_used: SystemTime::now(),
-                text_id,
-            },
-        );
-
-        self.automatic_unload()?;
-
-        Ok(text_id)
-    }
-
-    pub fn new(
-        internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
-        bytes_loader: Box<dyn bytes_loader::BytesLoader>,
-        bytes_parser: Box<dyn bytes_parser::BytesParser>,
-        unload_strategy: UnloadStrategy,
-    ) -> Self {
-        // let placeholder_text_id = Self::alloc_in(
-        //     internal_text_man.clone(),
-        //     "<temporary texture>".to_owned(),
-        //     ColorImage::new([1, 1], Color32::TRANSPARENT),
-        // );
-
-        Self {
-            bytes_loader,
-            bytes_parser,
-            internal_text_man,
-            // placeholder_text_id,
-            text_id_cache: HashMap::new(),
-            text_id_cache_size: 0,
-            unload_strategy,
-        }
-    }
-
-    fn automatic_unload(&mut self) -> Result<(), &'static str> {
+    /// Checks, if according to the [`UnloadStrategy`], textures need to be unloaded
+    /// and does so if necessary.
+    fn automatic_unload(&mut self) -> Result<(), DynTextManErr> {
         let target_cache_size = match self.unload_strategy {
-            UnloadStrategy::None => todo!(),
+            UnloadStrategy::None => return Ok(()),
             UnloadStrategy::TargetCacheSize(target_cache_size) => target_cache_size,
         };
 
@@ -133,6 +83,81 @@ impl DynTextMan {
         Ok(())
     }
 
+    fn insert_into_cache(&mut self, url: &str, size: &TextSize, text_id: TextureId) {
+        self.text_id_cache.insert(
+            (url.to_owned(), *size),
+            CachedTexture {
+                last_used: SystemTime::now(),
+                text_id,
+            },
+        );
+    }
+
+    pub fn load(&mut self, url: &str, size: &TextSize) -> Result<TextureId, DynTextManErr> {
+        if let Some(CachedTexture { last_used, text_id }) = self
+            .text_id_cache
+            .get_mut(&(url, size) as &dyn TextIdCacheKey)
+        {
+            *last_used = SystemTime::now();
+
+            return Ok(text_id.clone());
+        }
+
+        // let file_ext = match self.try_get_file_ext(url) {
+        //     ControlFlow::Continue(file_ext) => file_ext,
+        //     ControlFlow::Break(text_id) => return text_id,
+        // };
+
+        let bytes = match self.bytes_loader.load(url) {
+            bytes_loader::LoaderResult::Again => todo!(),
+            bytes_loader::LoaderResult::Bytes(bytes) => bytes,
+            bytes_loader::LoaderResult::Err(err) => {
+                self.insert_into_cache(url, size, self.placeholder_text_id);
+                return Err(DynTextManErr::Loader(err));
+            }
+        };
+
+        let text = self
+            .bytes_parser
+            .parse(&bytes, size)
+            .map_err(|e| {
+                self.insert_into_cache(url, size, self.placeholder_text_id);
+                DynTextManErr::Parser(e)
+    })?;
+        let text_id = self.alloc(url.to_string(), text);
+        let text_id_size = byte_size_of_text_id(text_id, &self.internal_text_man.read())?;
+
+        self.text_id_cache_size += text_id_size;
+        self.insert_into_cache(url, size, text_id);
+
+        self.automatic_unload()?;
+
+        Ok(text_id)
+    }
+
+    pub fn new(
+        internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
+        bytes_loader: Box<dyn bytes_loader::BytesLoader>,
+        bytes_parser: Box<dyn bytes_parser::BytesParser>,
+        unload_strategy: UnloadStrategy,
+    ) -> Self {
+        let placeholder_text_id = Self::alloc_in(
+            internal_text_man.clone(),
+            "<temporary texture>".to_owned(),
+            ColorImage::new([1, 1], Color32::TRANSPARENT),
+        );
+
+        Self {
+            bytes_loader,
+            bytes_parser,
+            internal_text_man,
+            placeholder_text_id,
+            text_id_cache: HashMap::new(),
+            text_id_cache_size: 0,
+            unload_strategy,
+        }
+    }
+
     // fn try_get_file_ext<'a>(&self, url: &'a str) -> ControlFlow<TextureId, &'a str> {
     //     if let Some(ext) = std::path::Path::new(url).extension() {
     //         return ControlFlow::Continue(ext.to_str().unwrap());
@@ -147,7 +172,7 @@ impl DynTextMan {
     //     return ControlFlow::Break(self.placeholder_text_id);
     // }
 
-    pub fn unload(&mut self, url: &str, size: &TextSize) -> Result<(), &'static str> {
+    pub fn unload(&mut self, url: &str, size: &TextSize) -> Result<(), DynTextManErr> {
         let text = self
             .text_id_cache
             .remove(&(url, size) as &dyn TextIdCacheKey);
@@ -165,13 +190,34 @@ impl DynTextMan {
     }
 }
 
+#[derive(Debug)]
+pub enum DynTextManErr {
+    Loader(BytesLoaderErr),
+    Parser(BytesParserErr),
+    /// A texture that we currently have cached could not be found within the underlying
+    /// texture manager.
+    CachedTextureNotFound,
+}
+
+impl Error for DynTextManErr {}
+
+impl Display for DynTextManErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DynTextManErr::Loader(err) => Display::fmt(&err, f),
+            DynTextManErr::Parser(err) => Display::fmt(&err, f),
+            DynTextManErr::CachedTextureNotFound => Debug::fmt(&self, f),
+        }
+    }
+}
+
 fn byte_size_of_text_id(
     id: TextureId,
     text_man: &egui::epaint::textures::TextureManager,
-) -> Result<usize, &'static str> {
-    let meta = text_man.meta(id).ok_or_else(|| {
-        "could not find texture id that was just allocated,  while trying to read size"
-    })?;
+) -> Result<usize, DynTextManErr> {
+    let meta = text_man
+        .meta(id)
+        .ok_or(DynTextManErr::CachedTextureNotFound)?;
 
     Ok(meta.bytes_used())
 }
@@ -192,8 +238,12 @@ pub enum UnloadStrategy {
 
 impl TextMan for DynTextMan {
     fn load_sized(&mut self, url: &str, size: &TextSize) -> TextureId {
-        // TODO: error handling
-        DynTextMan::load(self, url, size).unwrap()
+        match DynTextMan::load(self, url, size) {
+            Ok(id) => return id,
+            Err(err) => log_err!("failed to load: '{} ({:?})': {}", url, size, err),
+        };
+
+        self.placeholder_text_id
     }
 
     fn unload_sized(&mut self, url: &str, size: &TextSize) {
