@@ -66,11 +66,11 @@ pub fn jpg_bytes_parser(bytes: &[u8], _: &TextSize) -> Result<ColorImage, BytesP
     with_image_create_decoder(new_decoder!(image::codecs::jpeg::JpegDecoder<_>, bytes))
 }
 
-// TODO: Add missing feature flag
-pub fn svg_bytes_parser(bytes: &[u8], size: &TextSize) -> ColorImage {
+#[cfg(feature = "svg")]
+pub fn svg_bytes_parser(bytes: &[u8], size: &TextSize) -> Result<ColorImage, BytesParserErr> {
     let options = usvg::Options::default();
-    // TODO: remove unwrap (the parser should return a result in the future)
-    let tree = usvg::Tree::from_data(&bytes, &options.to_ref()).unwrap();
+    let tree = usvg::Tree::from_data(&bytes, &options.to_ref())
+        .map_err(|e| BytesParserErr::Unknown(format!("{}", e)))?;
     let (width, height) = *size;
 
     // TODO: Make size optional, and read it from the svg if possible.
@@ -93,10 +93,9 @@ pub fn svg_bytes_parser(bytes: &[u8], size: &TextSize) -> ColorImage {
         usvg::FitTo::Size(width as u32, height as u32),
         tiny_skia::Transform::default(),
         pixmap.as_mut(),
-    )
-    .unwrap();
+    );
 
-    egui::ColorImage::from_rgba_unmultiplied([width as _, height as _], pixmap.data())
+    Ok(egui::ColorImage::from_rgba_unmultiplied([width as _, height as _], pixmap.data()))
 }
 
 #[derive(Debug)]
