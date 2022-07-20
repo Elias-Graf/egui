@@ -20,7 +20,7 @@ use super::{
 
 pub struct DynTextMan {
     bytes_loader: Box<dyn bytes_loader::BytesLoader>,
-    bytes_parser: Box<dyn bytes_parser::BytesParser>,
+    bytes_parsers: HashMap<String, Box<dyn bytes_parser::BytesParser>>,
     internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
     /// TODO: Would be better as a constant, but has to be obtained through the
     /// [`egui::epaint::textures::TextureManager`].
@@ -83,6 +83,15 @@ impl DynTextMan {
         Ok(())
     }
 
+    fn file_ext_of<'a>(&self, url: &'a str) -> Result<&'a str, DynTextManErr> {
+        let ext = std::path::Path::new(url)
+            .extension()
+            .ok_or(DynTextManErr::InvalidFileName)?;
+        let ext = ext.to_str().ok_or(DynTextManErr::InvalidFileName)?;
+
+        Ok(ext)
+    }
+
     fn insert_into_cache(&mut self, url: &str, size: &TextSize, text_id: TextureId) {
         self.text_id_cache.insert(
             (url.to_owned(), *size),
@@ -103,27 +112,21 @@ impl DynTextMan {
             return Ok(text_id.clone());
         }
 
-        // let file_ext = match self.try_get_file_ext(url) {
-        //     ControlFlow::Continue(file_ext) => file_ext,
-        //     ControlFlow::Break(text_id) => return text_id,
-        // };
-
         let bytes = match self.bytes_loader.load(url) {
             bytes_loader::LoaderResult::Again => todo!(),
             bytes_loader::LoaderResult::Bytes(bytes) => bytes,
-            bytes_loader::LoaderResult::Err(err) => {
-                self.insert_into_cache(url, size, self.placeholder_text_id);
-                return Err(DynTextManErr::Loader(err));
-            }
+            bytes_loader::LoaderResult::Err(err) => return Err(DynTextManErr::Loader(err)),
         };
 
-        let text = self
-            .bytes_parser
+        let ext = self.file_ext_of(url)?;
+        let bytes_parser = self
+            .bytes_parsers
+            .get(ext)
+            .ok_or_else(|| DynTextManErr::NoParserRegisteredFor(ext.to_owned()))?;
+
+        let text = bytes_parser
             .parse(&bytes, size)
-            .map_err(|e| {
-                self.insert_into_cache(url, size, self.placeholder_text_id);
-                DynTextManErr::Parser(e)
-    })?;
+            .map_err(|e| DynTextManErr::Parser(e))?;
         let text_id = self.alloc(url.to_string(), text);
         let text_id_size = byte_size_of_text_id(text_id, &self.internal_text_man.read())?;
 
@@ -138,7 +141,6 @@ impl DynTextMan {
     pub fn new(
         internal_text_man: Arc<egui::mutex::RwLock<egui::epaint::textures::TextureManager>>,
         bytes_loader: Box<dyn bytes_loader::BytesLoader>,
-        bytes_parser: Box<dyn bytes_parser::BytesParser>,
         unload_strategy: UnloadStrategy,
     ) -> Self {
         let placeholder_text_id = Self::alloc_in(
@@ -149,7 +151,7 @@ impl DynTextMan {
 
         Self {
             bytes_loader,
-            bytes_parser,
+            bytes_parsers: HashMap::new(),
             internal_text_man,
             placeholder_text_id,
             text_id_cache: HashMap::new(),
@@ -158,19 +160,13 @@ impl DynTextMan {
         }
     }
 
-    // fn try_get_file_ext<'a>(&self, url: &'a str) -> ControlFlow<TextureId, &'a str> {
-    //     if let Some(ext) = std::path::Path::new(url).extension() {
-    //         return ControlFlow::Continue(ext.to_str().unwrap());
-    //     }
-
-    //     tracing::error!(
-    //         "texture url {} is missing extension, using placeholder texture",
-    //         url
-    //     );
-
-    //     // TODO: Test this
-    //     return ControlFlow::Break(self.placeholder_text_id);
-    // }
+    pub fn register_bytes_parser(
+        &mut self,
+        ext: String,
+        parser: Box<dyn bytes_parser::BytesParser>,
+    ) {
+        self.bytes_parsers.insert(ext, parser);
+    }
 
     pub fn unload(&mut self, url: &str, size: &TextSize) -> Result<(), DynTextManErr> {
         let text = self
@@ -192,11 +188,20 @@ impl DynTextMan {
 
 #[derive(Debug)]
 pub enum DynTextManErr {
-    Loader(BytesLoaderErr),
-    Parser(BytesParserErr),
     /// A texture that we currently have cached could not be found within the underlying
     /// texture manager.
     CachedTextureNotFound,
+    /// The file name is invalid and could not be parsed.
+    ///
+    /// May also be thrown if the file extension is invalid / not found.
+    InvalidFileName,
+    /// There is currently no [`bytes_parser::BytesParser`] registered for the relevant
+    /// extension.
+    ///
+    /// Wraps the file extension in question.
+    NoParserRegisteredFor(String),
+    Loader(BytesLoaderErr),
+    Parser(BytesParserErr),
 }
 
 impl Error for DynTextManErr {}
@@ -204,9 +209,11 @@ impl Error for DynTextManErr {}
 impl Display for DynTextManErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DynTextManErr::CachedTextureNotFound
+            | DynTextManErr::InvalidFileName
+            | DynTextManErr::NoParserRegisteredFor(_) => Debug::fmt(&self, f),
             DynTextManErr::Loader(err) => Display::fmt(&err, f),
             DynTextManErr::Parser(err) => Display::fmt(&err, f),
-            DynTextManErr::CachedTextureNotFound => Debug::fmt(&self, f),
         }
     }
 }
@@ -239,11 +246,16 @@ pub enum UnloadStrategy {
 impl TextMan for DynTextMan {
     fn load_sized(&mut self, url: &str, size: &TextSize) -> TextureId {
         match DynTextMan::load(self, url, size) {
-            Ok(id) => return id,
-            Err(err) => log_err!("failed to load: '{} ({:?})': {}", url, size, err),
-        };
+            Ok(id) => id,
+            Err(err) => {
+                log_err!("failed to load: '{} ({:?})': {}", url, size, err);
 
-        self.placeholder_text_id
+                // Insert a placeholder texture, so that will be returned next
+                // time. Instead of resulting in the same error every time.
+                self.insert_into_cache(url, size, self.placeholder_text_id);
+                self.placeholder_text_id
+            }
+        }
     }
 
     fn unload_sized(&mut self, url: &str, size: &TextSize) {
