@@ -8,14 +8,14 @@ use egui::ColorImage;
 use super::TextSize;
 
 pub trait BytesParser {
-    fn parse(&self, bytes: &[u8], size: &TextSize) -> Result<ColorImage, BytesParserErr>;
+    fn parse(&self, bytes: &[u8], size: Option<&TextSize>) -> Result<ColorImage, BytesParserErr>;
 }
 
 impl<T> BytesParser for T
 where
-    T: Fn(&[u8], &TextSize) -> Result<ColorImage, BytesParserErr>,
+    T: Fn(&[u8], Option<&TextSize>) -> Result<ColorImage, BytesParserErr>,
 {
-    fn parse(&self, bytes: &[u8], size: &TextSize) -> Result<ColorImage, BytesParserErr> {
+    fn parse(&self, bytes: &[u8], size: Option<&TextSize>) -> Result<ColorImage, BytesParserErr> {
         self(bytes, size)
     }
 }
@@ -53,7 +53,7 @@ fn with_image_create_decoder<'a, D: image::ImageDecoder<'a>>(
 /// Note that this parser ignores the passed size, as a png already has a fixed
 /// one.
 #[cfg(all(feature = "image", feature = "png"))]
-pub fn png_bytes_parser(bytes: &[u8], _: &TextSize) -> Result<ColorImage, BytesParserErr> {
+pub fn png_bytes_parser(bytes: &[u8], _: Option<&TextSize>) -> Result<ColorImage, BytesParserErr> {
     with_image_create_decoder(new_decoder!(image::codecs::png::PngDecoder<_>, bytes))
 }
 
@@ -62,16 +62,17 @@ pub fn png_bytes_parser(bytes: &[u8], _: &TextSize) -> Result<ColorImage, BytesP
 /// Note that this parser ignores the passed size, as a png already has a fixed
 /// one.
 #[cfg(all(feature = "image", feature = "jpeg"))]
-pub fn jpg_bytes_parser(bytes: &[u8], _: &TextSize) -> Result<ColorImage, BytesParserErr> {
+pub fn jpg_bytes_parser(bytes: &[u8], _: Option<&TextSize>) -> Result<ColorImage, BytesParserErr> {
     with_image_create_decoder(new_decoder!(image::codecs::jpeg::JpegDecoder<_>, bytes))
 }
 
 #[cfg(feature = "svg")]
-pub fn svg_bytes_parser(bytes: &[u8], size: &TextSize) -> Result<ColorImage, BytesParserErr> {
+pub fn svg_bytes_parser(bytes: &[u8], size: Option<&TextSize>) -> Result<ColorImage, BytesParserErr> {
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_data(&bytes, &options.to_ref())
         .map_err(|e| BytesParserErr::Unknown(format!("{}", e)))?;
-    let (width, height) = *size;
+    // TODO: remove unwrap
+    let (width, height) = *size.unwrap();
 
     // TODO: Make size optional, and read it from the svg if possible.
     // let (width, height) = match size {

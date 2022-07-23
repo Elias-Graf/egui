@@ -76,7 +76,7 @@ impl DynTextMan {
                 let url = &url.clone();
                 let size = &size.clone();
 
-                self.unload(url, size)?;
+                self.unload(url, Some(size))?;
             }
         }
 
@@ -92,7 +92,9 @@ impl DynTextMan {
         Ok(ext)
     }
 
-    fn insert_into_cache(&mut self, url: &str, size: &TextSize, text_id: TextureId) {
+    fn insert_into_cache(&mut self, url: &str, size: Option<&TextSize>, text_id: TextureId) {
+        let size = self.size_or_zero(size);
+
         self.text_id_cache.insert(
             (url.to_owned(), *size),
             CachedTexture {
@@ -102,11 +104,15 @@ impl DynTextMan {
         );
     }
 
-    pub fn load(&mut self, url: &str, size: &TextSize) -> Result<TextureId, DynTextManErr> {
-        if let Some(CachedTexture { last_used, text_id }) = self
+    fn size_or_zero<'a>(&self, size: Option<&'a TextSize>) -> &'a TextSize {
+        size.unwrap_or(&(0, 0))
+    }
+
+    pub fn load(&mut self, url: &str, size: Option<&TextSize>) -> Result<TextureId, DynTextManErr> {
+        let existing = self
             .text_id_cache
-            .get_mut(&(url, size) as &dyn TextIdCacheKey)
-        {
+            .get_mut(&(url, self.size_or_zero(size)) as &dyn TextIdCacheKey);
+        if let Some(CachedTexture { last_used, text_id }) = existing {
             *last_used = SystemTime::now();
 
             return Ok(text_id.clone());
@@ -168,7 +174,8 @@ impl DynTextMan {
         self.bytes_parsers.insert(ext, parser);
     }
 
-    pub fn unload(&mut self, url: &str, size: &TextSize) -> Result<(), DynTextManErr> {
+    pub fn unload(&mut self, url: &str, size: Option<&TextSize>) -> Result<(), DynTextManErr> {
+        let size = self.size_or_zero(size);
         let text = self
             .text_id_cache
             .remove(&(url, size) as &dyn TextIdCacheKey);
@@ -244,24 +251,49 @@ pub enum UnloadStrategy {
 }
 
 impl TextMan for DynTextMan {
-    fn load_sized(&mut self, url: &str, size: &TextSize) -> TextureId {
-        match DynTextMan::load(self, url, size) {
+    fn load(&mut self, url: &str) -> TextureId {
+        match DynTextMan::load(self, url, None) {
             Ok(id) => id,
-            Err(err) => {
-                log_err!("failed to load: '{} ({:?})': {}", url, size, err);
+            Err(err) => handle_load_err(self, url, None, err),
+        }
+    }
 
-                // Insert a placeholder texture, so that will be returned next
-                // time. Instead of resulting in the same error every time.
-                self.insert_into_cache(url, size, self.placeholder_text_id);
-                self.placeholder_text_id
-            }
+    fn load_sized(&mut self, url: &str, size: &TextSize) -> TextureId {
+        match DynTextMan::load(self, url, Some(size)) {
+            Ok(id) => id,
+            Err(err) => handle_load_err(self, url, Some(size), err),
+        }
+    }
+
+    fn unload(&mut self, url: &str) {
+        if let Err(err) = DynTextMan::unload(self, url, None) {
+            handle_unload_err(url, None, err)
         }
     }
 
     fn unload_sized(&mut self, url: &str, size: &TextSize) {
-        // TODO: error handling
-        DynTextMan::unload(self, url, size).unwrap()
+        if let Err(err) = DynTextMan::unload(self, url, Some(size)) {
+            handle_unload_err(url, Some(size), err)
+        }
     }
+}
+
+fn handle_load_err(
+    text_man: &mut DynTextMan,
+    url: &str,
+    size: Option<&TextSize>,
+    err: DynTextManErr,
+) -> TextureId {
+    log_err!("failed to load: '{} ({:?})': {}", url, size, err);
+
+    // Insert a placeholder texture, so that will be returned next
+    // time. Instead of resulting in the same error every time.
+    text_man.insert_into_cache(url, size, text_man.placeholder_text_id);
+    text_man.placeholder_text_id
+}
+
+fn handle_unload_err(url: &str, size: Option<&TextSize>, err: DynTextManErr) {
+    log_err!("failed to unload: '{} ({:?})': {}", url, size, err);
 }
 
 impl DbgTextMan for DynTextMan {

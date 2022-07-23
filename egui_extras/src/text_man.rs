@@ -17,13 +17,9 @@ pub type TextSize = (usize, usize);
 pub trait TextMan {
     /// Load a texture **without** specifying a size.
     ///
-    /// **Given that a size is needed for caching, size (0, 0) will be used.**
-    ///
     /// The parser will not receive any size, and it may infer it from the
     /// content.
-    fn load(&mut self, url: &str) -> TextureId {
-        self.load_sized(url, &(0, 0))
-    }
+    fn load(&mut self, url: &str) -> TextureId;
     /// Load a texture at the specified size.
     ///
     /// The size is important for things like SVG, which can be rasterized at any
@@ -32,11 +28,7 @@ pub trait TextMan {
     /// Note that the parser may ignore the specified size, depending on the textures
     /// type and content.
     fn load_sized(&mut self, url: &str, size: &TextSize) -> TextureId;
-    /// Unloads the saved bytes of the texture.
-    fn unload(&mut self, _url: &str) {
-        // TODO: determine if all sizes of the particular texture should be cleared.
-        todo!("determine if all sizes of the particular texture should be cleared.");
-    }
+    fn unload(&mut self, _url: &str);
     fn unload_sized(&mut self, url: &str, size: &TextureSize);
 }
 
