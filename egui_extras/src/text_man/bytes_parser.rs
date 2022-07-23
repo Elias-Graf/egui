@@ -67,25 +67,25 @@ pub fn jpg_bytes_parser(bytes: &[u8], _: Option<&TextSize>) -> Result<ColorImage
 }
 
 #[cfg(feature = "svg")]
-pub fn svg_bytes_parser(bytes: &[u8], size: Option<&TextSize>) -> Result<ColorImage, BytesParserErr> {
+pub fn svg_bytes_parser(
+    bytes: &[u8],
+    size: Option<&TextSize>,
+) -> Result<ColorImage, BytesParserErr> {
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_data(&bytes, &options.to_ref())
         .map_err(|e| BytesParserErr::Unknown(format!("{}", e)))?;
-    // TODO: remove unwrap
-    let (width, height) = *size.unwrap();
 
-    // TODO: Make size optional, and read it from the svg if possible.
-    // let (width, height) = match size {
-    //     Some(size) => *size,
-    //     None => {
-    //         let svg_node_size = tree.svg_node().size;
+    let (width, height) = match size {
+        Some(size) => *size,
+        None => {
+            let svg_node_size = tree.svg_node().size;
 
-    //         (
-    //             svg_node_size.width() as usize,
-    //             svg_node_size.height() as usize,
-    //         )
-    //     }
-    // };
+            (
+                svg_node_size.width() as _,
+                svg_node_size.height() as _,
+            )
+        }
+    };
 
     let mut pixmap = tiny_skia::Pixmap::new(width as u32, height as u32).unwrap();
 
@@ -96,7 +96,10 @@ pub fn svg_bytes_parser(bytes: &[u8], size: Option<&TextSize>) -> Result<ColorIm
         pixmap.as_mut(),
     );
 
-    Ok(egui::ColorImage::from_rgba_unmultiplied([width as _, height as _], pixmap.data()))
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [width as _, height as _],
+        pixmap.data(),
+    ))
 }
 
 #[derive(Debug)]
